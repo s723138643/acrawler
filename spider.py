@@ -32,7 +32,7 @@ class Spider:
         return n
 
     async def parse(self, url):
-        pass
+        raise NotImplementedError()
 
     def close(self):
         self.client.close()
