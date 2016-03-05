@@ -3,22 +3,12 @@ import asyncio
 
 from .node import FetchNode, WorkNode
 from .squeue import PrioritySQLiteQueue, Empty, Full
-from .sfilter import UrlFilter
-from .spider import Spider
 
 class Scheduler:
-    def __init__(self, spiderclass, filterclass=None, timeout=1):
-        if issubclass(spiderclass, Spider):
-            self.loop = asyncio.get_event_loop()
-            self.spider = spiderclass(loop=self.loop)
-        else:
-            raise RuntimeError('spiderclass is not subclass of Spider')
-
-        if filterclass and issubclass(filterclass, UrlFilter):
-            self.urlfilter = filterclass()
-        else:
-            raise RuntimeError('filterclass is not subclass of UrlFilter')
-
+    def __init__(self, spider, urlfilter=None, timeout=1):
+        self.loop = asyncio.get_event_loop()
+        self.spider = spider
+        self.urlfilter = None if not urlfilter else urlfilter
         self.fetchQueue = PrioritySQLiteQueue('task.db')
         self.workQueue = asyncio.PriorityQueue(loop=self.loop)
         self.fetching = True

@@ -9,14 +9,13 @@ Headers = {
         }
 
 class Spider:
-    def __init__(self, startURLs=None, headers=None, loop=None):
+    def __init__(self, startURLs=None, headers=None):
         self.headers = headers if headers else Headers
         self.cookies = CookieJar()
         self.client = None
-        self.loop = loop
         self.startURLs = startURLs
         self.client = aiohttp.ClientSession(headers=self.headers, \
-                cookies=self.cookies, loop=self.loop)
+                cookies=self.cookies)
 
     def makeStart(self):
         for i in self.startURLs:
