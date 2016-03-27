@@ -1,37 +1,53 @@
+from urllib.parse import urlparse
 from http.cookiejar import CookieJar
 
 import aiohttp
 
-from .node import FetchNode, WorkNode
-
-Headers = {
-        'User-Agent':'Mozilla/5.0 (X11; Linux x86_64; rv:42.0) Gecko/20100101 Firefox/43.0'
-        }
+from .node import Request, Response
 
 class Spider:
-    def __init__(self, startURLs=None, headers=None):
-        self.headers = headers if headers else Headers
+    starturls = []
+    hosts = set()
+
+    def __init__(self, settings, loop=None):
+        self.loop = loop
+        self.settings = settings
+        self.headers = self.settings.get('crawler_header') or None
         self.cookies = CookieJar()
-        self.client = None
-        self.startURLs = startURLs
-        self.client = aiohttp.ClientSession(headers=self.headers, \
+        self.client = aiohttp.ClientSession(
+                headers=self.headers,
                 cookies=self.cookies)
 
-    def makeStart(self):
-        for i in self.startURLs:
-            n = FetchNode(i, callback=self.fetch)
+    @classmethod
+    def from_urls(cls, urls):
+        if isinstance(urls, str):
+            urls = [urls,]
+        hosts = set()
+        for i in urls:
+            _, host, *x = urlparse(i)
+            hosts.add(host)
+        cls.starturls = urls
+        cls.hosts = hosts
+        return cls
+
+    def start_request(self):
+        for i in self.starturls:
+            n = Request(i, callback=self.fetch)
             yield n
 
     async def fetch(self, n):
         async with self.client.get(n.url) as response:
             body = await response.read()
-        n = WorkNode(n.url, body)
+        n = Response(n.url, body)
         n.callback = self.parse
 
         return n
 
-    async def parse(self, url):
+    def parse(self, url):
         raise NotImplementedError()
 
     def close(self):
         self.client.close()
+
+    def __del__(self):
+        self.close()

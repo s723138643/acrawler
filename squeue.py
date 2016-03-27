@@ -1,11 +1,10 @@
 from .queuelib import sqlitequeue as sqliteq
-from .queuelib.basequeue import Empty
-from .queuelib.basequeue import Full
+from .queuelib.sqlitequeue import SQLiteEmptyError, SQLiteFullError
 
 def _serializeQueue(queueClass, pickleFun):
     class SerialzeQueue(queueClass):
-        def __init__(self, path, maxsize=None):
-            queueClass.__init__(self, path, maxsize)
+        def __init__(self, path, maxsize=0, loop=None):
+            queueClass.__init__(self, path, maxsize, loop)
 
         def put_nowait(self, item):
             n = pickleFun(item)
