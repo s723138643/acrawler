@@ -1,3 +1,5 @@
+import functools
+
 from urllib.parse import urlparse
 from http.cookiejar import CookieJar
 
@@ -17,6 +19,7 @@ class Spider:
         self.client = aiohttp.ClientSession(
                 headers=self.headers,
                 cookies=self.cookies)
+        self.DefRequest = Request.from_fetch_fun(self.fetch)
 
     @classmethod
     def from_urls(cls, urls):
@@ -32,16 +35,18 @@ class Spider:
 
     def start_request(self):
         for i in self.starturls:
-            n = Request(i, callback=self.fetch)
+            n = self.DefRequest(i, callback=self.parse)
             yield n
 
-    async def fetch(self, n):
+    async def fetch(self, n, *args, **kwargs):
         async with self.client.get(n.url) as response:
             body = await response.read()
-        n = Response(n.url, body)
-        n.callback = self.parse
+        x = Response(n.url, body)
+        x.callback = n.callback
+        x.args = args
+        x.kwargs = kwargs
 
-        return n
+        return x
 
     def parse(self, url):
         raise NotImplementedError()

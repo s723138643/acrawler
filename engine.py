@@ -48,9 +48,10 @@ class Engine:
                 if fetchNode:
                     self.activates += 1
                     logging.debug(
-                            'fetch thread[{}]: fetching request<{}>'.format(
-                                name, fetchNode.url))
-                    call = fetchNode.callback
+                            'FetchThread[{}] fetching: {}'.format(
+                                name, fetchNode))
+                    call = fetchNode.fetch_fun
+#                    print(call)
                     args = fetchNode.args
                     kwargs = fetchNode.kwargs
                     try:
@@ -58,12 +59,12 @@ class Engine:
                             call = getattr(self.spider, call)
                         result = await call(fetchNode, *args, **kwargs)
                     except Exception as e:
-                        logging.debug('fetch thread[{}]: {}'.format(name, e))
+                        logging.debug('FetchThread[{}] {}'.format(name, e))
                     else:
                         if result:
                             await self.scheduler.add(result)
                     self.activates -= 1
-        logging.debug('fetch thread[{}]: quit'.format(name))
+        logging.debug('FetchThread[{}] quit'.format(name))
 
     async def work(self, name):
         while self.working:
@@ -83,14 +84,16 @@ class Engine:
                     args = workNode.args
                     kwargs = workNode.kwargs
                     try:
+                        if not callable(x):
+                            x = getattr(self.spider, x)
                         result = x(workNode, *args, **kwargs)
                     except Exception as e:
-                        logging.debug('work thread[{}]: {}'.format(name, e))
+                        logging.debug('WorkThread[{}] {}'.format(name, e))
                     else:
                         if result:
                             await self.scheduler.add(result)
                     self.activates -= 1
-        logging.debug('work thread[{}]: quit'.format(name))
+        logging.debug('WorkThread[{}] quit'.format(name))
 
     def signalhandler(self, signame):
         logging.info('got signal {}: exit'.format(signame))
@@ -99,10 +102,10 @@ class Engine:
 
     def run(self):
         # catch 'Ctrl+C' signal
-        for signame in ['SIGINT', 'SIGTERM']:
-            self.loop.add_signal_handler(
-                    getattr(signal, signame),
-                    functools.partial(self.signalhandler, signame))
+#        for signame in ['SIGINT', 'SIGTERM']:
+#            self.loop.add_signal_handler(
+#                    getattr(signal, signame),
+#                    functools.partial(self.signalhandler, signame))
 
         if self.scheduler.fetch_queue_empty():
             self.loop.run_until_complete(

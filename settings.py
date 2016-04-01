@@ -14,7 +14,8 @@ DEFAULT_CONFIG = {
         'parse_threads': 1,
         'get_queue_timeout': None,
         'max_memq_size': 30,
-        'sqlite_task_path': 'task.db'
+        'sqlite_task_path': None,
+        'sqlite_task_name': 'task'
         }
 
 def get_settings_from_file(path):

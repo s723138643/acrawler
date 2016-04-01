@@ -5,7 +5,7 @@ import sqlitequeue
 
 async def testqueue():
     datas = [1, 2, 3, 4, 5, 6, 7]
-    queue = sqlitequeue.FifoSQLiteQueue('test.db')
+    queue = sqlitequeue.FifoSQLiteQueue()
     for i in datas:
         print('put data: {}'.format(i))
         await queue.put(i)
@@ -13,6 +13,7 @@ async def testqueue():
     for i in range(4):
         x = await queue.get(timeout=1)
         print('get data: {}'.format(x))
+    queue.close()
 
 class item:
     def __init__(self, data, priority):
@@ -25,10 +26,10 @@ async def testpriorityqueue():
             item(4,1), item(5,3), item(6,2),
             item(7,1), item(8,3), item(9,2)
             ]
-    queue = sqlitequeue.PrioritySQLiteQueue('test.db', 10)
+    queue = sqlitequeue.PrioritySQLiteQueue(maxsize=10)
     for i in range(5):
         print('put data: {}, priority: {}'.format(datas[i].data, datas[i].priority))
-        await queue.put(datas[i])
+        await queue.put(datas[i], datas[i].priority)
 
     print('queue size {}'.format(queue.qsize()))
     print('-' * 10)
@@ -52,10 +53,11 @@ async def testpriorityqueue():
             data,datas[i%len(datas)].priority))
         start = time.time()
         try:
-            x = await queue.put(datas[i%len(datas)], timeout=2)
+            x = await queue.put(datas[i%len(datas)], datas[i%len(datas)].priority, timeout=2)
         except sqlitequeue.SQLiteFullError:
             print('wait 2 seconds, actually {} seconds'.format(
                 time.time()-start))
+    queue.close()
 
 
 async def work():
@@ -72,6 +74,6 @@ task = [
 
 loop = asyncio.get_event_loop()
 #loop.run_until_complete(testqueue())
-print('*'*10)
+print('-'*10)
 loop.run_until_complete(asyncio.wait(task))
 loop.close()
