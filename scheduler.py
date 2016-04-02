@@ -38,8 +38,6 @@ class Scheduler:
     async def _add_request(self, node):
         if self.urlfilter.url_allowed(node.url, node.redirect):
             await self.fetchdiskq.put((node, node.priority))
-        else:
-            logging.debug('request<{}> is not allowed'.format(node.url))
 
     async def _add_response(self, node):
         await self.workq.put((node, node.priority))
@@ -47,7 +45,6 @@ class Scheduler:
     def next_request(self):
         try:
             req, _ = self.fetchdiskq.get_nowait()
-            logging.debug('get {}'.format(req))
         except SQLiteEmptyError:
             raise QueueEmpty()
         return req
@@ -66,4 +63,5 @@ class Scheduler:
         return self.workq.empty()
 
     def close(self):
+        self.urlfilter.close()
         self.fetchdiskq.close()

@@ -6,7 +6,7 @@ import functools
 from .settings import get_settings_from_file
 
 from .scheduler import Scheduler, QueueEmpty
-from .sfilter import Filter
+from .sfilter import BlumeFilter as Filter
 
 class Engine:
     def __init__(self, scheduler, spider, settings, loop):
@@ -39,11 +39,11 @@ class Engine:
                 if self.activates <= 0 and \
                         self.scheduler.work_queue_empty() and \
                         self.scheduler.fetch_queue_empty():
-                    self.scheduler.stop = True
                     self.fetching = False
-                await asyncio.sleep(0.1)
-            except Exception:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.2)
+            except Exception as e:
+                logging.debug('Error {}'.format(e))
+                await asyncio.sleep(0.2)
             else:
                 if fetchNode:
                     self.activates += 1
@@ -51,7 +51,6 @@ class Engine:
                             'FetchThread[{}] fetching: {}'.format(
                                 name, fetchNode))
                     call = fetchNode.fetch_fun
-#                    print(call)
                     args = fetchNode.args
                     kwargs = fetchNode.kwargs
                     try:
@@ -73,7 +72,7 @@ class Engine:
             except QueueEmpty:
                 if self.scheduler.work_queue_empty() and not self.fetching:
                     self.working = False
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.2)
             else:
                 if workNode:
                     self.activates += 1
