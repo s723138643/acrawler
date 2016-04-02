@@ -37,6 +37,7 @@ class Node:
 class Request(Node):
 
     fetch_fun = None
+
     def __init__(self, url,
             priority=3,
             redirect=0,
@@ -48,27 +49,34 @@ class Request(Node):
         self.redirect = redirect
 
     def __str__(self):
-        if isinstance(self.callback, str):
-            return 'Request<{}, {}>'.format(self.url, self.callback)
-        return 'Request<{}, {}>'.format(self.url, self.callback.__name__)
+        if callable(self.callback):
+            return 'Request<{} [{}] {}>'.format(
+                    self.url, self.priority, self.callback.__name__)
+        return 'Request<{} [{}] {}>'.format(
+                self.url, self.priority, self.callback)
 
     @classmethod
-    def from_fetch_fun(cls, fetch_fun):
+    def set_fetcher(cls, fetch_fun):
         cls.fetch_fun = fetch_fun
         return cls
 
+    @classmethod
+    def from_callback(cls, callback, priority=3, *args, **kwargs):
+        return cls(callback, priority, args, kwargs)
 
 class Response(Node):
     def __init__(self, url, html,
             priority=3,
             callback=None,
-            args=[],
+            args=(),
             kwargs={}):
 
         super().__init__(url, priority, callback, args, kwargs)
         self.html = html
 
     def __str__(self):
-        if isinstance(self.callback, str):
-            return 'Request<{}, {}>'.format(self.url, self.callback)
-        return 'Response<{}, {}>'.format(self, url, self.callback)
+        if callable(self.callback):
+            return 'Response<{} [{}] {}>'.format(
+                    self.url, self.priority, self.callback.__name__)
+        return 'Response<{} [{}] {}>'.format(
+                self.url, self.priority, self.callback)

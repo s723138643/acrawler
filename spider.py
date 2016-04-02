@@ -19,10 +19,10 @@ class Spider:
         self.client = aiohttp.ClientSession(
                 headers=self.headers,
                 cookies=self.cookies)
-        self.DefRequest = Request.from_fetch_fun(self.fetch)
+        self.DefRequest = Request.set_fetcher(self.fetch)
 
     @classmethod
-    def from_urls(cls, urls):
+    def set_starturls(cls, urls):
         if isinstance(urls, str):
             urls = [urls,]
         hosts = set()

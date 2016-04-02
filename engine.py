@@ -34,16 +34,16 @@ class Engine:
                 break
 
             try:
-                fetchNode = await self.scheduler.next_request()
+                fetchNode = self.scheduler.next_request()
             except QueueEmpty:
                 if self.activates <= 0 and \
                         self.scheduler.work_queue_empty() and \
                         self.scheduler.fetch_queue_empty():
                     self.scheduler.stop = True
                     self.fetching = False
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.1)
             except Exception:
-                continue
+                await asyncio.sleep(0.1)
             else:
                 if fetchNode:
                     self.activates += 1
@@ -69,14 +69,11 @@ class Engine:
     async def work(self, name):
         while self.working:
             try:
-                workNode = await asyncio.wait_for(
-                    self.scheduler.next_response(),
-                    0.5,
-                    loop=self.loop)
-            except asyncio.TimeoutError:
+                workNode = self.scheduler.next_response()
+            except QueueEmpty:
                 if self.scheduler.work_queue_empty() and not self.fetching:
                     self.working = False
-                continue
+                await asyncio.sleep(0.1)
             else:
                 if workNode:
                     self.activates += 1
@@ -102,10 +99,10 @@ class Engine:
 
     def run(self):
         # catch 'Ctrl+C' signal
-#        for signame in ['SIGINT', 'SIGTERM']:
-#            self.loop.add_signal_handler(
-#                    getattr(signal, signame),
-#                    functools.partial(self.signalhandler, signame))
+        for signame in ['SIGINT', 'SIGTERM']:
+            self.loop.add_signal_handler(
+                    getattr(signal, signame),
+                    functools.partial(self.signalhandler, signame))
 
         if self.scheduler.fetch_queue_empty():
             self.loop.run_until_complete(
@@ -117,8 +114,6 @@ class Engine:
 
         for i in range(self.workThread):
             tasks.append(asyncio.ensure_future(self.work(str(i))))
-
-        tasks.append(asyncio.ensure_future(self.scheduler.sync()))
 
         try:
             self.loop.run_until_complete(asyncio.wait(tasks))

@@ -3,10 +3,10 @@ import sqlite3
 import pickle
 import time
 import asyncio
+import logging
 
 from pathlib import Path
 
-#from .basequeue import Empty, Full
 
 class SQLiteEmptyError(Exception):
     pass
@@ -16,13 +16,6 @@ class SQLiteFullError(Exception):
 
 class SQLiteError(Exception):
     pass
-
-def pickleit(item):
-    return pickle.dumps(item)
-
-
-def unpickleit(item):
-    return pickle.loads(item)
 
 
 class FifoSQLiteQueue:
@@ -38,11 +31,12 @@ class FifoSQLiteQueue:
 
     def __init__(self, path='.', name='task.db', maxsize=0, loop=None):
         self._maxsize = maxsize if maxsize else 0
+
         self._loop = loop if loop else asyncio.get_event_loop()
         self._path = path if path else '.'
         self._name = name if name else 'task.db'
         dbfile = Path(path) / self._name
-        print('open db: {}'.format(dbfile))
+
         self._db = sqlite3.Connection(str(dbfile), timeout=60)
         self._db.text_factory = bytes
         self._cursor = self._db.cursor()
@@ -51,20 +45,17 @@ class FifoSQLiteQueue:
     def put_nowait(self, item):
         if self.full():
             raise SQLiteFullError('SQLiteQueue is Full')
-        x = pickleit(item)
-        self._cursor.execute(self._sql_push, (x,))
+        self._cursor.execute(self._sql_push, (item,))
 
     def get_nowait(self):
         if self.empty():
             raise SQLiteEmptyError('SQLiteQueue is empty')
 
         x = self._cursor.execute(self._sql_pop)
-        try:
-            _id, _item = x.fetchone()
-            self._cursor.execute(self._sql_del, (_id,))
-        except TypeError as e:
-            raise e
-        return unpickleit(_item)
+        _id, _item = x.fetchone()
+        self._cursor.execute(self._sql_del, (_id,))
+
+        return _item
 
     @property
     def maxsize(self):
@@ -123,9 +114,6 @@ class FifoSQLiteQueue:
             self._db.close()
             Path(self._path + '/' + self._name).unlink()
 
-#    def __del__(self):
-#        self.close()
-
     def qsize(self):
         return self.__len__()
 
@@ -156,6 +144,7 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
         else:
             activate = task_dir / 'active.json'
             if activate.is_file():
+                logging.debug('resume from disk queue')
                 with activate.open('r') as fp:
                     x = json.load(fp)
                 for priority, filename in x.items():
@@ -163,7 +152,7 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
                             self._path,
                             name=filename,
                             loop=self._loop)
-                    self._queues[priority] = queue
+                    self._queues[int(priority)] = queue
             else:
                 for i in task_dir.glob('*.db'):
                     i.unlink()
@@ -175,20 +164,18 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
 
         return queue
 
-    def put_nowait(self, item, priority=0):
+    def put_nowait(self, items):
+        item, priority = items
         if self.full():
             raise SQLiteFullError('SQLiteQueue is full')
 
         if priority not in self._queues.keys():
             self._create_queue(priority, loop=self._loop)
         queue = self._queues.get(priority)
-#        print('{}'.format(queue))
         if isinstance(queue, FifoSQLiteQueue):
             queue.put_nowait(item)
-#            print('queue of {} size: {}'.format(priority, queue.qsize()))
         else:
             raise SQLiteError('SQLiteQueue error')
-#            print('queue is false')
 
     def get_nowait(self):
         if self.empty():
@@ -198,15 +185,14 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
             queue = self._queues.get(i)
             if queue:
                 try:
-                    return queue.get_nowait()
+                    return queue.get_nowait(), i
                 except SQLiteEmptyError:
                     continue
         raise SQLiteEmptyError('SQLiteQueue is empty')
 
-    async def put(self, item, block=True, timeout=None):
-        item, priority = item
+    async def put(self, items, block=True, timeout=None):
         if not block:
-            self.put_nowait(item, priority)
+            self.put_nowait(items)
             return
 
         if timeout and timeout < 0.0:
@@ -215,7 +201,7 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
         start = time.time()
         while True:
             try:
-                self.put_nowait(item, priority)
+                self.put_nowait(items)
             except SQLiteFullError:
                 await asyncio.sleep(0.1, loop=self._loop)
             else:
