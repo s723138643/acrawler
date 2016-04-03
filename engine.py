@@ -26,6 +26,8 @@ class Engine:
         self.workThread = self.settings.get('parse_threads') or 1
         # activate threads (both fethTread and workThread)
         self.activates = 0
+        self.errorlimit = self.settings.get('errorlimit')
+        self.error = 0
 
     async def fetch(self, name):
         while self.fetching:
@@ -58,7 +60,14 @@ class Engine:
                             call = getattr(self.spider, call)
                         result = await call(fetchNode, *args, **kwargs)
                     except Exception as e:
-                        logging.debug('FetchThread[{}] {}'.format(name, e))
+                        self.error += 1
+                        logging.debug(
+                                'FetchThread[{}] {}, count:{}'.format(
+                                    name, e, self.error))
+                        if self.errorlimit and self.error > self.errorlimit:
+                            logging.debug(
+                                    'FetchThread to much error occur, exit')
+                            self.fetching = False
                     else:
                         if result:
                             await self.scheduler.add(result)

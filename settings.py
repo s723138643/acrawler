@@ -15,7 +15,8 @@ DEFAULT_CONFIG = {
         'get_queue_timeout': None,
         'max_memq_size': 30,
         'sqlite_task_path': None,
-        'sqlite_task_name': 'task'
+        'sqlite_task_name': 'task',
+        'errorlimit': None
         }
 
 def get_settings_from_file(path):
