@@ -22,14 +22,40 @@ class Engine:
         self.spider = spider
         self.timeout = 3
 
-        self.fetchThread = self.settings.get('download_threads') or 1
-        self.workThread = self.settings.get('parse_threads') or 1
-        # activate threads (both fethTread and workThread)
-        self.activates = 0
+        self.fetchThread = self.settings.get('download_threads')
+        self.workThread = self.settings.get('parse_threads')
+        # activate threads (fethTread and workThread)
+        self.activate_fetch_thread = 0
+        self.activate_work_thread = 0
         self.errorlimit = self.settings.get('errorlimit')
         self.error = 0
 
     async def fetch(self, name):
+        async def _do_fetch(request):
+            if not request:
+                return
+            logging.debug(
+                    'FetchThread[{}] fetching: {}'.format(
+                        name, request))
+            fetcher = request.fetch_fun
+            args = request.args
+            kwargs = request.kwargs
+            try:
+                if not callable(fetcher):
+                    fetcher = getattr(self.spider, fetcher)
+                result = await fetcher(request, *args, **kwargs)
+            except Exception as e:
+                self.error += 1
+                logging.debug(
+                        'FetchThread[{}] {}, count:{}'.format(
+                            name, e, self.error))
+                if self.errorlimit and self.error > self.errorlimit:
+                    logging.debug('FetchThread to much error occur, exit')
+                    self.fetching = False
+                    return
+            if result:
+                await self.scheduler.add(result)
+
         while self.fetching:
             if self.quit_flag:
                 self.fetching = False
@@ -38,66 +64,55 @@ class Engine:
             try:
                 fetchNode = self.scheduler.next_request()
             except QueueEmpty:
-                if self.activates <= 0 and \
+                if self.scheduler.fetch_queue_empty() and \
+                        self.activate_fetch_thread <= 0 and \
                         self.scheduler.work_queue_empty() and \
-                        self.scheduler.fetch_queue_empty():
+                        self.activate_work_thread <= 0:
                     self.fetching = False
-                await asyncio.sleep(0.2)
+                else:
+                    await asyncio.sleep(0.2)
             except Exception as e:
                 logging.debug('Error {}'.format(e))
                 await asyncio.sleep(0.2)
             else:
-                if fetchNode:
-                    self.activates += 1
-                    logging.debug(
-                            'FetchThread[{}] fetching: {}'.format(
-                                name, fetchNode))
-                    call = fetchNode.fetch_fun
-                    args = fetchNode.args
-                    kwargs = fetchNode.kwargs
-                    try:
-                        if not callable(call):
-                            call = getattr(self.spider, call)
-                        result = await call(fetchNode, *args, **kwargs)
-                    except Exception as e:
-                        self.error += 1
-                        logging.debug(
-                                'FetchThread[{}] {}, count:{}'.format(
-                                    name, e, self.error))
-                        if self.errorlimit and self.error > self.errorlimit:
-                            logging.debug(
-                                    'FetchThread to much error occur, exit')
-                            self.fetching = False
-                    else:
-                        if result:
-                            await self.scheduler.add(result)
-                    self.activates -= 1
+                self.activate_fetch_thread += 1
+                await _do_fetch(fetchNode)
+                self.activate_fetch_thread -= 1
         logging.debug('FetchThread[{}] quit'.format(name))
 
     async def work(self, name):
+        async def _do_work(response):
+            if not response:
+                return
+
+            callback = response.callback
+            args = response.args
+            kwargs = response.kwargs
+            try:
+                if not callable(callback):
+                    callback = getattr(self.spider, callback)
+                result = callback(response, *args, **kwargs)
+            except Exception as e:
+                logging.debug('WorkThread[{}] error {}'.format(name, e))
+                return
+
+            if result:
+                await self.scheduler.add(result)
+
         while self.working:
             try:
                 workNode = self.scheduler.next_response()
             except QueueEmpty:
-                if self.scheduler.work_queue_empty() and not self.fetching:
+                if self.scheduler.work_queue_empty() and \
+                        self.activate_work_thread <= 0 and \
+                        not self.fetching:
                     self.working = False
-                await asyncio.sleep(0.2)
+                else:
+                    await asyncio.sleep(0.2)
             else:
-                if workNode:
-                    self.activates += 1
-                    x = workNode.callback
-                    args = workNode.args
-                    kwargs = workNode.kwargs
-                    try:
-                        if not callable(x):
-                            x = getattr(self.spider, x)
-                        result = x(workNode, *args, **kwargs)
-                    except Exception as e:
-                        logging.debug('WorkThread[{}] {}'.format(name, e))
-                    else:
-                        if result:
-                            await self.scheduler.add(result)
-                    self.activates -= 1
+                self.activate_work_thread += 1
+                await _do_work(workNode)
+                self.activate_work_thread -= 1
         logging.debug('WorkThread[{}] quit'.format(name))
 
     def signalhandler(self, signame):
