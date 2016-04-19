@@ -20,6 +20,7 @@ class Spider:
                 headers=self.headers,
                 cookies=self.cookies)
         self.DefRequest = Request.set_fetcher(self.fetch)
+        self.closed = False
 
     @classmethod
     def set_starturls(cls, urls):
@@ -53,6 +54,8 @@ class Spider:
 
     def close(self):
         self.client.close()
+        self.closed = True
 
     def __del__(self):
-        self.close()
+        if not self.closed:
+            self.close()

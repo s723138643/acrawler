@@ -223,8 +223,8 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
         return self._size
 
     def close(self):
+        f = Path(self._path) / 'active.json'
         if self._queues:
-            f = Path(self._path) / 'active.json'
             x = {}
 
             for i in self._queues.keys():
@@ -234,3 +234,6 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
             if x:
                 with f.open('w') as fp:
                     json.dump(x, fp)
+        else:
+            if f.is_file():
+                f.unlink()

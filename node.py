@@ -47,6 +47,7 @@ class Request(Node):
 
         super().__init__(url, priority, callback, args, kwargs)
         self.redirect = redirect
+        self.filter_ignore = False
 
     def __str__(self):
         if callable(self.callback):

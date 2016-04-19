@@ -36,8 +36,11 @@ class Scheduler:
             await self._add_request(node)
 
     async def _add_request(self, node):
-        if self.urlfilter.url_allowed(node.url, node.redirect):
+        if node.filter_ignore:
             await self.fetchdiskq.put((node, node.priority))
+        else:
+            if self.urlfilter.url_allowed(node.url, node.redirect):
+                await self.fetchdiskq.put((node, node.priority))
 
     async def _add_response(self, node):
         await self.workq.put((node, node.priority))

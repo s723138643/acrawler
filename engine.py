@@ -46,11 +46,11 @@ class Engine:
                 result = await fetcher(request, *args, **kwargs)
             except Exception as e:
                 self.error += 1
-                logging.debug(
+                logging.error(
                         'FetchThread[{}] {}, count:{}'.format(
                             name, e, self.error))
                 if self.errorlimit and self.error > self.errorlimit:
-                    logging.debug('FetchThread to much error occur, exit')
+                    logging.error('FetchThread to much error occur, exit')
                     self.fetching = False
                     return
             if result:
@@ -72,7 +72,7 @@ class Engine:
                 else:
                     await asyncio.sleep(0.2)
             except Exception as e:
-                logging.debug('Error {}'.format(e))
+                logging.error('Error {}'.format(e))
                 await asyncio.sleep(0.2)
             else:
                 self.activate_fetch_thread += 1
@@ -93,7 +93,7 @@ class Engine:
                     callback = getattr(self.spider, callback)
                 result = callback(response, *args, **kwargs)
             except Exception as e:
-                logging.debug('WorkThread[{}] error {}'.format(name, e))
+                logging.error('WorkThread[{}] error {}'.format(name, e))
                 return
 
             if result:
@@ -116,7 +116,7 @@ class Engine:
         logging.debug('WorkThread[{}] quit'.format(name))
 
     def signalhandler(self, signame):
-        logging.info('got signal {}: exit'.format(signame))
+        logging.warning('got signal {}: exit'.format(signame))
         self.scheduler.stop = True
         self.quit_flag = True
 
@@ -127,10 +127,9 @@ class Engine:
                     getattr(signal, signame),
                     functools.partial(self.signalhandler, signame))
 
-        if self.scheduler.fetch_queue_empty():
-            self.loop.run_until_complete(
-                    self.scheduler.add(
-                        self.spider.start_request()))
+        self.loop.run_until_complete(
+                self.scheduler.add(self.spider.start_request())
+                )
         tasks = []
         for i in range(self.fetchThread):
             tasks.append(asyncio.ensure_future(self.fetch(str(i))))
