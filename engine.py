@@ -105,7 +105,7 @@ class Engine:
             except QueueEmpty:
                 if self.scheduler.work_queue_empty() and \
                         self.activate_work_thread <= 0 and \
-                        not self.fetching:
+                        self.activate_fetch_thread <= 0:
                     self.working = False
                 else:
                     await asyncio.sleep(0.2)
@@ -132,13 +132,23 @@ class Engine:
                 )
         tasks = []
         for i in range(self.fetchThread):
-            tasks.append(asyncio.ensure_future(self.fetch(str(i))))
+            tasks.append(
+                    asyncio.ensure_future(
+                        self.fetch(str(i))
+                        )
+                    )
 
         for i in range(self.workThread):
-            tasks.append(asyncio.ensure_future(self.work(str(i))))
+            tasks.append(
+                    asyncio.ensure_future(
+                        self.work(str(i))
+                        )
+                    )
 
         try:
-            self.loop.run_until_complete(asyncio.wait(tasks))
+            self.loop.run_until_complete(
+                    asyncio.wait(tasks)
+                    )
         finally:
             self.scheduler.close()
             self.loop.close()
