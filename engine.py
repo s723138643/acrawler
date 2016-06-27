@@ -64,10 +64,10 @@ class Engine:
             try:
                 fetchNode = self.scheduler.next_request()
             except QueueEmpty:
-                if self.scheduler.fetch_queue_empty() and \
-                        self.activate_fetch_thread <= 0 and \
-                        self.scheduler.work_queue_empty() and \
-                        self.activate_work_thread <= 0:
+                if self.scheduler.fetch_queue_empty() \
+                        and self.activate_fetch_thread <= 0 \
+                        and self.scheduler.work_queue_empty() \
+                        and self.activate_work_thread <= 0:
                     self.fetching = False
                 else:
                     await asyncio.sleep(0.2)
@@ -103,9 +103,10 @@ class Engine:
             try:
                 workNode = self.scheduler.next_response()
             except QueueEmpty:
-                if self.scheduler.work_queue_empty() and \
-                        self.activate_work_thread <= 0 and \
-                        self.activate_fetch_thread <= 0:
+                if self.scheduler.work_queue_empty() \
+                        and self.scheduler.fetch_queue_empty() \
+                        and self.activate_work_thread <= 0 \
+                        and self.activate_fetch_thread <= 0:
                     self.working = False
                 else:
                     await asyncio.sleep(0.2)
