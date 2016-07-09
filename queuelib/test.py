@@ -29,12 +29,12 @@ async def testpriorityqueue():
     queue = sqlitequeue.PrioritySQLiteQueue(maxsize=10)
     for i in range(5):
         print('put data: {}, priority: {}'.format(datas[i].data, datas[i].priority))
-        await queue.put(datas[i], datas[i].priority)
+        await queue.put((datas[i], datas[i].priority))
 
     print('queue size {}'.format(queue.qsize()))
     print('-' * 10)
     for i in range(3):
-        x = await queue.get()
+        x, _ = await queue.get()
         print('get data: {}, priority: {}'.format(x.data, x.priority))
 
     print('queue size {}'.format(queue.qsize()))
@@ -53,7 +53,7 @@ async def testpriorityqueue():
             data,datas[i%len(datas)].priority))
         start = time.time()
         try:
-            x = await queue.put(datas[i%len(datas)], datas[i%len(datas)].priority, timeout=2)
+            x = await queue.put((datas[i%len(datas)], datas[i%len(datas)].priority))
         except sqlitequeue.SQLiteFullError:
             print('wait 2 seconds, actually {} seconds'.format(
                 time.time()-start))

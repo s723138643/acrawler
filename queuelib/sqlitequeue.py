@@ -1,11 +1,11 @@
 import json
 import sqlite3
-import pickle
-import time
 import asyncio
 import logging
+import pickle
 
 from pathlib import Path
+from collections import deque
 
 
 class SQLiteEmptyError(Exception):
@@ -39,23 +39,37 @@ class FifoSQLiteQueue:
 
         self._db = sqlite3.Connection(str(dbfile), timeout=60)
         self._db.text_factory = bytes
-        self._cursor = self._db.cursor()
-        self._cursor.execute(self._sql_create)
+        cursor = self._db.cursor()
+        cursor.execute(self._sql_create)
+
+        self._getters = deque()
+        self._putters = deque()
+
+    def _put(self, item):
+        item = pickle.dumps(item)
+        cursor = self._db.cursor()
+        cursor.execute(self._sql_push, (item,))
+
+    def _get(self):
+        cursor = self._db.cursor()
+        x = cursor.execute(self._sql_pop)
+        _id, _item = x.fetchone()
+        cursor.execute(self._sql_del, (_id,))
+
+        return pickle.loads(_item)
 
     def put_nowait(self, item):
         if self.full():
             raise SQLiteFullError('SQLiteQueue is Full')
-        self._cursor.execute(self._sql_push, (item,))
+        self._put(item)
+        self._weakup_next(self._getters)
 
     def get_nowait(self):
         if self.empty():
             raise SQLiteEmptyError('SQLiteQueue is empty')
-
-        x = self._cursor.execute(self._sql_pop)
-        _id, _item = x.fetchone()
-        self._cursor.execute(self._sql_del, (_id,))
-
-        return _item
+        item = self._get()
+        self._weakup_next(self._putters)
+        return item
 
     @property
     def maxsize(self):
@@ -66,48 +80,41 @@ class FifoSQLiteQueue:
             return False
         return self._maxsize <= self.qsize()
 
-    async def put(self, item, block=True, timeout=None):
-        if not block:
-            self.put_nowait(item)
-            return
-
-        if timeout and timeout < 0.0:
-            raise ValueError("'timeout' must be a non-negative number")
-
-        start = time.time()
-        while True:
+    async def put(self, item):
+        while self.full():
+            putter = self._loop.create_future()
+            self._putters.append()
             try:
-                self.put_nowait(item)
-            except SQLiteFullError:
-                await asyncio.sleep(0.1, loop=self._loop)
-            else:
-                break
-            if timeout and time.time() - start > timeout:
-                if self.full():
-                    raise SQLiteFullError('SQLiteQueue is full')
-                raise asyncio.TimeoutError('SQLiteQueue put method timeout')
+                await putter
+            except:
+                putter.cancel()
+                if not self.full() and not putter.cancelled():
+                    self._weakup_next(self._putters)
+                raise
+        self.put_nowait(item)
 
-    async def get(self, block=True, timeout=None):
-        if not block:
-            return self.get_nowait()
-
-        if timeout and timeout < 0.0:
-            raise ValueError("'timeout' must be a non-negative number")
-
-        start = time.time()
-        while True:
+    async def get(self):
+        while self.empty():
+            getter = self._loop.create_future()
+            self._getters.append()
             try:
-                return self.get_nowait()
-            except SQLiteEmptyError:
-                await asyncio.sleep(0.1, loop=self._loop)
-            if timeout and time.time() - start >= timeout:
-                if self.empty():
-                    raise SQLiteEmptyError('SQLiteQueue is empty')
-                raise asyncio.TimeoutError('SQLiteQueue get method timeout')
+                await getter
+            except:
+                getter.cancel()
+                if not self.empty() and not getter.cancelled():
+                    self._weakup_next(self._getters)
+                raise
+        return self.get_nowait()
+
+    def _weakup_next(self, waiters):
+        if waiters:
+            waiter = waiters.popleft()
+            if not waiter.done():
+                waiter.set_result(None)
 
     def close(self):
         size = self.__len__()
-        if size and size > 0:
+        if size > 0:
             self._db.commit()
             self._db.close()
         else:
@@ -121,7 +128,8 @@ class FifoSQLiteQueue:
         return self.qsize() == 0
 
     def __len__(self):
-        x = self._cursor.execute(self._sql_size)
+        cursor = self._db.cursor()
+        x = cursor.execute(self._sql_size)
         return x.fetchone()[0]
 
 
@@ -133,6 +141,9 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
         self._path = path if path else './task'
         self._basename = basename if basename else 'task_priority'
         self._maxsize = maxsize
+        self._getters = deque()
+        self._putters = deque()
+
         self._pass_or_resume()
 
     def _pass_or_resume(self):
@@ -174,6 +185,7 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
         queue = self._queues.get(priority)
         if isinstance(queue, FifoSQLiteQueue):
             queue.put_nowait(item)
+            self._weakup_next(self._getters)
         else:
             raise SQLiteError('SQLiteQueue error')
 
@@ -185,31 +197,25 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
             queue = self._queues.get(i)
             if queue:
                 try:
-                    return queue.get_nowait(), i
+                    item = (queue.get_nowait(), i)
+                    self._weakup_next(self._putters)
+                    return item
                 except SQLiteEmptyError:
                     continue
         raise SQLiteEmptyError('SQLiteQueue is empty')
 
-    async def put(self, items, block=True, timeout=None):
-        if not block:
-            self.put_nowait(items)
-            return
-
-        if timeout and timeout < 0.0:
-            raise ValueError("'timeout' must be a non-negative number")
-
-        start = time.time()
-        while True:
+    async def put(self, items):
+        while self.full():
+            putter = self._loop.create_future()
+            self._putters.append(putter)
             try:
-                self.put_nowait(items)
-            except SQLiteFullError:
-                await asyncio.sleep(0.1, loop=self._loop)
-            else:
-                break
-            if timeout and time.time() - start > timeout:
-                if self.full():
-                    raise SQLiteFullError('SQLiteQueue is full')
-                raise asyncio.TimeoutError('SQLiteQueue put method timeout')
+                await putter
+            except:
+                putter.cancel()
+                if not self.full() and not putter.cancelled():
+                    self._weakup_next(self._putters)
+                raise
+        self.put_nowait(items)
 
     @property
     def _size(self):
