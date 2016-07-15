@@ -1,70 +1,55 @@
 import logging
 import asyncio
-import json
 
-from asyncio import PriorityQueue
+from .squeue import PrioritySQLiteQueue, SQLiteEmptyError
 
-from .node import Request, Response
-from .squeue import PrioritySQLiteQueue, SQLiteEmptyError, SQLiteFullError
+logger = logging.getLogger('Scheduler')
+
 
 class QueueEmpty(Exception):
     pass
 
+
 class Scheduler:
     def __init__(self, urlfilter, settings, loop=None):
-        self.stop = False
-        self.loop = loop
-        self.urlfilter = urlfilter
-        self.settings = settings
-        self.maxsize = self.settings.get('max_memq_size')
-        diskq_path = self.settings.get('sqlite_task_path')
-        self.fetchdiskq = PrioritySQLiteQueue(diskq_path, loop=self.loop)
-        self.fetchmemq = PriorityQueue(maxsize=self.maxsize, loop=self.loop)
-        self.workq = PriorityQueue(loop=self.loop)
+        self._loop = asyncio.get_event_loop() if not loop else loop
+        self._urlfilter = urlfilter
+        self._settings = settings
+        self.maxsize = self._settings.get('max_size')
+        task_path = self._settings.get('task_path')
+        task_name = self._settings.get('task_name')
+        self.fetchdiskq = PrioritySQLiteQueue(
+                task_path, task_name,
+                loop=self._loop)
 
-    async def add(self, nodes):
-        if hasattr(nodes, '__iter__'):
-            for i in nodes:
-                await self.add_one(i)
+    async def add(self, requests):
+        for request in requests:
+            await self._add_request(request)
+
+    async def _add_request(self, request):
+        if request.filter_ignore:
+            await self.fetchdiskq.put((request, request.priority))
+            logger.warn('add request <{}> ignore filter'.format(request.url))
         else:
-            await self.add_one(nodes)
+            if self._urlfilter.url_allowed(request.url, request.redirect):
+                await self.fetchdiskq.put((request, request.priority))
+            else:
+                logger.debug('request is in queue, igonre')
 
-    async def add_one(self, node):
-        if isinstance(node, Response):
-            await self._add_response(node)
-        elif isinstance(node, Request):
-            await self._add_request(node)
-
-    async def _add_request(self, node):
-        if node.filter_ignore:
-            await self.fetchdiskq.put((node, node.priority))
-        else:
-            if self.urlfilter.url_allowed(node.url, node.redirect):
-                await self.fetchdiskq.put((node, node.priority))
-
-    async def _add_response(self, node):
-        await self.workq.put((node, node.priority))
-
-    def next_request(self):
+    def next_nowait(self):
         try:
             req, _ = self.fetchdiskq.get_nowait()
         except SQLiteEmptyError:
             raise QueueEmpty()
         return req
 
-    def next_response(self):
-        try:
-            n, _ = self.workq.get_nowait()
-        except asyncio.QueueEmpty:
-            raise QueueEmpty()
-        return n
+    async def next(self):
+        req, _ = await self.fetchdiskq.get()
+        return req
 
-    def fetch_queue_empty(self):
+    def empty(self):
         return self.fetchdiskq.empty()
 
-    def work_queue_empty(self):
-        return self.workq.empty()
-
     def close(self):
-        self.urlfilter.close()
+        self._urlfilter.close()
         self.fetchdiskq.close()

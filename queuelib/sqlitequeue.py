@@ -1,8 +1,6 @@
-import json
+import re
 import sqlite3
 import asyncio
-import logging
-import pickle
 
 from pathlib import Path
 from collections import deque
@@ -11,15 +9,16 @@ from collections import deque
 class SQLiteEmptyError(Exception):
     pass
 
+
 class SQLiteFullError(Exception):
     pass
+
 
 class SQLiteError(Exception):
     pass
 
 
 class FifoSQLiteQueue:
-
     _sql_create = (
         'CREATE TABLE IF NOT EXISTS queue '
         '(id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB)'
@@ -30,6 +29,7 @@ class FifoSQLiteQueue:
     _sql_del = 'DELETE FROM queue WHERE id = ?'
 
     def __init__(self, path='.', name='task.db', maxsize=0, loop=None):
+        self._closed = False
         self._maxsize = maxsize if maxsize else 0
 
         self._loop = loop if loop else asyncio.get_event_loop()
@@ -46,7 +46,6 @@ class FifoSQLiteQueue:
         self._putters = deque()
 
     def _put(self, item):
-        item = pickle.dumps(item)
         cursor = self._db.cursor()
         cursor.execute(self._sql_push, (item,))
 
@@ -56,7 +55,7 @@ class FifoSQLiteQueue:
         _id, _item = x.fetchone()
         cursor.execute(self._sql_del, (_id,))
 
-        return pickle.loads(_item)
+        return _item
 
     def put_nowait(self, item):
         if self.full():
@@ -83,7 +82,7 @@ class FifoSQLiteQueue:
     async def put(self, item):
         while self.full():
             putter = self._loop.create_future()
-            self._putters.append()
+            self._putters.append(putter)
             try:
                 await putter
             except:
@@ -96,7 +95,7 @@ class FifoSQLiteQueue:
     async def get(self):
         while self.empty():
             getter = self._loop.create_future()
-            self._getters.append()
+            self._getters.append(getter)
             try:
                 await getter
             except:
@@ -120,6 +119,10 @@ class FifoSQLiteQueue:
         else:
             self._db.close()
             Path(self._path + '/' + self._name).unlink()
+        self._closed = True
+
+    def is_closed(self):
+        return self._closed
 
     def qsize(self):
         return self.__len__()
@@ -132,10 +135,18 @@ class FifoSQLiteQueue:
         x = cursor.execute(self._sql_size)
         return x.fetchone()[0]
 
+    def __del__(self):
+        if not self._closed:
+            self.close()
+
 
 class PrioritySQLiteQueue(FifoSQLiteQueue):
 
-    def __init__(self, path='./task', basename='task_priority', maxsize=0, loop=None):
+    def __init__(
+            self, path='./task',
+            basename='task_priority',
+            maxsize=0, loop=None):
+        self._closed = False
         self._loop = loop if loop else asyncio.get_event_loop()
         self._queues = {}
         self._path = path if path else './task'
@@ -149,24 +160,17 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
     def _pass_or_resume(self):
         task_dir = Path(self._path)
         if not task_dir.is_dir():
-            if task_dir.exists():
-                task_dir.unlink()
             task_dir.mkdir()
         else:
-            activate = task_dir / 'active.json'
-            if activate.is_file():
-                logging.debug('resume from disk queue')
-                with activate.open('r') as fp:
-                    x = json.load(fp)
-                for priority, filename in x.items():
-                    queue = FifoSQLiteQueue(
-                            self._path,
-                            name=filename,
-                            loop=self._loop)
-                    self._queues[int(priority)] = queue
-            else:
-                for i in task_dir.glob('*.db'):
-                    i.unlink()
+            for child in task_dir.iterdir():
+                if child.is_file() and child.match(self._basename+'_*.db'):
+                    m = re.search(self._basename+'_(.*)\.db', str(child))
+                    if m:
+                        priority = m.group(1)
+                        queue = FifoSQLiteQueue(
+                                self._path,
+                                name=child.name, loop=self._loop)
+                        self._queues[int(priority)] = queue
 
     def _create_queue(self, priority, loop=None):
         name = '{}_{}.db'.format(self._basename, priority)
@@ -229,17 +233,10 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
         return self._size
 
     def close(self):
-        f = Path(self._path) / 'active.json'
         if self._queues:
-            x = {}
-
             for i in self._queues.keys():
-                if not self._queues[i].empty():
-                    x[i] = self._queues[i]._name
                 self._queues[i].close()
-            if x:
-                with f.open('w') as fp:
-                    json.dump(x, fp)
-        else:
-            if f.is_file():
-                f.unlink()
+        self._closed = True
+
+    def is_closed(self):
+        return self._closed

@@ -2,30 +2,51 @@ import json
 import os.path
 
 DEFAULT_CONFIG = {
-        'crawler_header': {
-            'User-Agent':'Mozilla/5.0 (X11; Linux x86_64; rv:42.0) Gecko/20100101 Firefox/43.0'
+        'spider': {
+            'headers': {
+                'User-Agent': (
+                    'Mozilla/5.0 (X11; Linux x86_64; rv:42.0)'
+                    ' Gecko/20100101 Firefox/43.0'),
+                },
+            'save_cookie': False,
             },
-        'cookiepath':'cookies.txt',
-        'hostonly': True,
-        'maxredirect': None,        # 默认不设置最大跳转数
-        'maxdeep': None,            # 默认不设置最大爬取深度
-        'download_threads': 1,
-        'download_timeout': None,
-        'parse_threads': 1,
-        'get_queue_timeout': None,
-        'max_memq_size': 30,
-        'sqlite_task_path': None,
-        'sqlite_task_name': 'task',
-        'errorlimit': None
+        'filter': {
+            'hostonly': True,
+            'maxredirect': None,        # 默认不设置最大跳转数
+            'maxdeep': None,            # 默认不设置最大爬取深度
+            'db_path': './filter',
+            'blumedb': 'blume.db',
+            'sqlitedb': 'sqlite.db'
+            },
+        'engine': {
+            'threads': 1
+            },
+        'scheduler': {
+            'max_size': 0,
+            'task_path': './task',
+            'task_name': 'task_priority'
+            }
         }
+
 
 def get_settings_from_file(path):
     settings = DEFAULT_CONFIG
     if os.path.isfile(path):
         with open(path, 'r') as f:
             tmp = json.load(f)
-        settings.update(tmp)
+        merge_settings(settings, tmp)
     return settings
+
+def merge_settings(default, current):
+    for key in default:
+        if key in current:
+            if isinstance(default[key], dict):
+                if isinstance(current[key], dict):
+                    merge_settings(default[key], current[key])
+            else:
+                if not isinstance(current[key], dict):
+                    default[key] = current[key]
+    return default
 
 if __name__ == '__main__':
     print(type(DEFAULT_CONFIG))
