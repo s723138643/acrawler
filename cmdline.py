@@ -1,10 +1,10 @@
-import pathlib
 import argparse
 import logging
 
 from .engine import Engine
 from .sfilter import BlumeFilter
 from .scheduler import Scheduler
+from .squeue import PrioritySQLiteQueue
 from .settings import get_settings_from_file, DEFAULT_CONFIG
 
 def get_args():
@@ -28,10 +28,8 @@ def get_args():
 
     return parser.parse_args()
 
-def execute(
-        SpiderClass, *,
-        SchedulerClass=Scheduler,
-        FilterClass=BlumeFilter):
+def execute(SpiderClass, *, SchedulerClass=Scheduler,
+            QueueClass=PrioritySQLiteQueue, FilterClass=BlumeFilter):
     args = get_args()
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -45,26 +43,13 @@ def execute(
     else:
         settings = DEFAULT_CONFIG
     if not args.resume:
-        filter_path = settings.get('filter').get('db_path')
-        blumefile = settings.get('filter').get('blumedb')
-        sqlite3file = settings.get('filter').get('sqlitedb')
-        p = pathlib.Path(filter_path)
-        blume = p / blumefile
-        sqlitedb = p / sqlite3file
-        if blume.is_file():
-            blume.unlink()
-        if sqlitedb.is_file():
-            sqlitedb.unlink()
-        task_path = settings.get('scheduler').get('task_path')
-        task_name = settings.get('scheduler').get('task_name')
-        p = pathlib.Path(task_path)
-        for child in p.iterdir():
-            if child.is_file() and child.match(task_name+'_*'):
-                child.unlink()
+        FilterClass.clean(settings['scheduler']['filter'])
+        QueueClass.clean(settings['scheduler']['queue'])
     if args.threads and args.threads > 0:
         settings['engine']['threads'] = args.threads
-    engine = Engine(settings, SpiderClass, SchedulerClass, FilterClass)
-    engine.run()
+    engine = Engine(settings, SpiderClass, SchedulerClass,
+                    QueueClass, FilterClass)
+    engine.run(resume=args.resume)
 
 if __name__ == '__main__':
     print(get_args())

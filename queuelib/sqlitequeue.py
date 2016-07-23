@@ -6,26 +6,31 @@ from pathlib import Path
 from collections import deque
 
 
-class SQLiteEmptyError(Exception):
-    pass
-
-
-class SQLiteFullError(Exception):
-    pass
-
+from .base import Empty, Full
 
 class SQLiteError(Exception):
     pass
 
 
 class FifoSQLiteQueue:
-    _sql_create = (
-        'CREATE TABLE IF NOT EXISTS queue '
-        '(id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB)'
-    )
+    _sql_create = ('CREATE TABLE IF NOT EXISTS queue '
+                   '(id INTEGER PRIMARY KEY AUTOINCREMENT,'
+                   ' url TEXT,'
+                   ' priority INTEGER,'
+                   ' _fetcher TEXT,'
+                   ' _parser TEXT,'
+                   ' filter_ignore INTEGER,'
+                   ' redirect INTEGER,'
+                   ' created REAL,'
+                   ' last_activated REAL,'
+                   ' retryed INTEGER)')
     _sql_size = 'SELECT COUNT(*) FROM queue'
-    _sql_push = 'INSERT INTO queue (item) VALUES (?)'
-    _sql_pop = 'SELECT id, item FROM queue ORDER BY id LIMIT 1'
+    _sql_push = ('INSERT INTO queue '
+                 '(url,priority,_fetcher,'
+                 ' _parser,filter_ignore,redirect,'
+                 ' created,last_activated,retryed) '
+                 'VALUES (?,?,?,?,?,?,?,?,?)')
+    _sql_pop = 'SELECT * FROM queue ORDER BY id LIMIT 1'
     _sql_del = 'DELETE FROM queue WHERE id = ?'
 
     def __init__(self, path='.', name='task.db', maxsize=0, loop=None):
@@ -35,37 +40,49 @@ class FifoSQLiteQueue:
         self._loop = loop if loop else asyncio.get_event_loop()
         self._path = path if path else '.'
         self._name = name if name else 'task.db'
-        dbfile = Path(path) / self._name
+        self._dbfile = Path(path) / self._name
 
-        self._db = sqlite3.Connection(str(dbfile), timeout=60)
-        self._db.text_factory = bytes
+        self._db = sqlite3.Connection(str(self._dbfile), timeout=60)
+        self._db.row_factory = sqlite3.Row
         cursor = self._db.cursor()
         cursor.execute(self._sql_create)
 
         self._getters = deque()
         self._putters = deque()
 
-    def _put(self, item):
+    def _put(self, request):
         cursor = self._db.cursor()
-        cursor.execute(self._sql_push, (item,))
+        try:
+            cursor.execute(self._sql_push,
+                           (request.url, request.priority, request.fetcher,
+                            request.parser, 1 if request.filter_ignore else 0,
+                            request.redirect, request.created,
+                            request.last_activated, request.retryed))
+        finally:
+            cursor.close()
 
     def _get(self):
         cursor = self._db.cursor()
-        x = cursor.execute(self._sql_pop)
-        _id, _item = x.fetchone()
-        cursor.execute(self._sql_del, (_id,))
+        try:
+            x = cursor.execute(self._sql_pop)
+            row = x.fetchone()
+            cursor.execute(self._sql_del, (row['id'],))
+            result_dict = dict(row)
+            del result_dict['id']
+        finally:
+            cursor.close()
 
-        return _item
+        return result_dict
 
-    def put_nowait(self, item):
+    def put_nowait(self, request):
         if self.full():
-            raise SQLiteFullError('SQLiteQueue is Full')
-        self._put(item)
+            raise Full('SQLiteQueue is Full')
+        self._put(request)
         self._weakup_next(self._getters)
 
     def get_nowait(self):
         if self.empty():
-            raise SQLiteEmptyError('SQLiteQueue is empty')
+            raise Empty('SQLiteQueue is empty')
         item = self._get()
         self._weakup_next(self._putters)
         return item
@@ -79,7 +96,7 @@ class FifoSQLiteQueue:
             return False
         return self._maxsize <= self.qsize()
 
-    async def put(self, item):
+    async def put(self, request):
         while self.full():
             putter = self._loop.create_future()
             self._putters.append(putter)
@@ -90,7 +107,7 @@ class FifoSQLiteQueue:
                 if not self.full() and not putter.cancelled():
                     self._weakup_next(self._putters)
                 raise
-        self.put_nowait(item)
+        self.put_nowait(request)
 
     async def get(self):
         while self.empty():
@@ -111,15 +128,22 @@ class FifoSQLiteQueue:
             if not waiter.done():
                 waiter.set_result(None)
 
+    @staticmethod
+    def clean(settings):
+        dbpath = Path(settings.get('task_path', './'))
+        dbfile = dbpath / settings.get('task_name', 'task.db')
+        if dbfile.is_file():
+            dbfile.unlink()
+
     def close(self):
+        self._closed = True
         size = self.__len__()
         if size > 0:
             self._db.commit()
             self._db.close()
         else:
             self._db.close()
-            Path(self._path + '/' + self._name).unlink()
-        self._closed = True
+            self.clean()
 
     def is_closed(self):
         return self._closed
@@ -142,16 +166,13 @@ class FifoSQLiteQueue:
 
 class PrioritySQLiteQueue(FifoSQLiteQueue):
 
-    def __init__(
-            self, path='./task',
-            basename='task_priority',
-            maxsize=0, loop=None):
+    def __init__(self, settings, loop=None):
         self._closed = False
         self._loop = loop if loop else asyncio.get_event_loop()
         self._queues = {}
-        self._path = path if path else './task'
-        self._basename = basename if basename else 'task_priority'
-        self._maxsize = maxsize
+        self._path = settings.get('task_path', './')
+        self._basename = settings.get('task_name', 'task_priority')
+        self._maxsize = settings.get('maxsize', 0)
         self._getters = deque()
         self._putters = deque()
 
@@ -180,22 +201,22 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
         return queue
 
     def put_nowait(self, items):
-        item, priority = items
+        request, priority = items
         if self.full():
-            raise SQLiteFullError('SQLiteQueue is full')
+            raise Full('SQLiteQueue is full')
 
         if priority not in self._queues.keys():
             self._create_queue(priority, loop=self._loop)
         queue = self._queues.get(priority)
         if isinstance(queue, FifoSQLiteQueue):
-            queue.put_nowait(item)
+            queue.put_nowait(request)
             self._weakup_next(self._getters)
         else:
             raise SQLiteError('SQLiteQueue error')
 
     def get_nowait(self):
         if self.empty():
-            raise SQLiteEmptyError('SQLiteQueue is empty')
+            raise Empty('SQLiteQueue is empty')
 
         for i in sorted(self._queues.keys()):
             queue = self._queues.get(i)
@@ -204,9 +225,9 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
                     item = (queue.get_nowait(), i)
                     self._weakup_next(self._putters)
                     return item
-                except SQLiteEmptyError:
+                except Empty:
                     continue
-        raise SQLiteEmptyError('SQLiteQueue is empty')
+        raise Empty('SQLiteQueue is empty')
 
     async def put(self, items):
         while self.full():
@@ -231,6 +252,14 @@ class PrioritySQLiteQueue(FifoSQLiteQueue):
 
     def __len__(self):
         return self._size
+
+    @staticmethod
+    def clean(settings):
+        dbpath = Path(settings.get('task_path', './'))
+        basename = settings.get('task_name', 'task_priority')
+        for f in dbpath.iterdir():
+            if f.match(basename+'_*.db'):
+                f.unlink()
 
     def close(self):
         if self._queues:

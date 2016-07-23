@@ -10,21 +10,22 @@ DEFAULT_CONFIG = {
                 },
             'save_cookie': False,
             },
-        'filter': {
-            'hostonly': True,
-            'maxredirect': None,        # 默认不设置最大跳转数
-            'maxdeep': None,            # 默认不设置最大爬取深度
-            'db_path': './filter',
-            'blumedb': 'blume.db',
-            'sqlitedb': 'sqlite.db'
-            },
         'engine': {
             'threads': 1
             },
         'scheduler': {
-            'max_size': 0,
-            'task_path': './task',
-            'task_name': 'task_priority'
+            'queue':{
+                'task_path': './task',
+                'task_name': 'task_priority'
+                },
+            'filter': {
+                'hostonly': True,
+                'maxredirect': None,        # 默认不设置最大跳转数
+                'maxdeep': None,            # 默认不设置最大爬取深度
+                'db_path': './filter',
+                'blumedb': 'blume.db',
+                'sqlitedb': 'sqlite.db'
+                }
             }
         }
 

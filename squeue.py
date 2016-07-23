@@ -1,15 +1,13 @@
-import pickle
-
+from .model import Request
 from .queuelib import sqlitequeue as sqliteq
-from .queuelib.sqlitequeue import SQLiteEmptyError, SQLiteFullError
+from .queuelib.base import Empty, Full
 
 
-def _serializeQueue(queueClass, pickleFun, unpickleFun):
+def _serializeQueue(queueClass, unpickleFun):
     class SerialzeQueue(queueClass):
 
-        def put_nowait(self, item):
-            n = pickleFun(item)
-            queueClass.put_nowait(self, n)
+        def put_nowait(self, request):
+            queueClass.put_nowait(self, request)
 
         def get_nowait(self):
             item = queueClass.get_nowait(self)
@@ -18,13 +16,12 @@ def _serializeQueue(queueClass, pickleFun, unpickleFun):
     return SerialzeQueue
 
 
-def _serializePriorityQueue(queueClass, pickleFun, unpickleFun):
+def _serializePriorityQueue(queueClass, unpickleFun):
     class SerialzeQueue(queueClass):
 
         def put_nowait(self, items):
             item, priority = items
-            n = pickleFun(item)
-            super(SerialzeQueue, self).put_nowait((n, priority))
+            super(SerialzeQueue, self).put_nowait((item, priority))
 
         def get_nowait(self):
             item, priority = super(SerialzeQueue, self).get_nowait()
@@ -33,20 +30,15 @@ def _serializePriorityQueue(queueClass, pickleFun, unpickleFun):
     return SerialzeQueue
 
 
-def pickleNode(node):
-    return pickle.dumps(node)
-
-
 def unpickleNode(node):
-    return pickle.loads(node)
+    node['filter_ignore'] = True if node['filter_ignore'] > 0 else False
+    return Request.from_dict(node)
 
 
 FifoSQLiteQueue = _serializeQueue(
         sqliteq.FifoSQLiteQueue,
-        pickleNode,
         unpickleNode)
 
 PrioritySQLiteQueue = _serializePriorityQueue(
         sqliteq.PrioritySQLiteQueue,
-        pickleNode,
         unpickleNode)

@@ -19,18 +19,16 @@ def get_hosts_from_urls(urls):
 
 
 class Engine:
-    def __init__(
-            self, settings, SpiderClass,
-            SchedulerClass, FilterClass, loop=None):
+    def __init__(self, settings, SpiderClass,
+                 SchedulerClass, QueueClass,
+                 FilterClass, loop=None):
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._settings = settings.get('engine', {})
         hosts = get_hosts_from_urls(SpiderClass.start_urls)
-        self._filter = FilterClass(settings.get('filter', {}))
-        self._filter.set_hosts(hosts)
-        self._scheduler = SchedulerClass(
-                self._filter,
-                settings.get('scheduler', {}),
-                self._loop)
+        FilterClass.set_hosts(hosts)
+        self._scheduler = SchedulerClass(settings.get('scheduler', {}),
+                                         FilterClass, QueueClass,
+                                         self._loop)
         self._SpiderClass = SpiderClass
         self._spider_settings = settings.get('spider', {})
 
@@ -53,8 +51,8 @@ class Engine:
         for worker in self._spiders:
             await worker.send(msg)
 
-    def run(self):
-        if self._scheduler.empty():
+    def run(self, resume=True):
+        if not resume:
             requests = self._SpiderClass.start_request()
             self._loop.run_until_complete(self._scheduler.add(requests))
         for i in range(self._settings['threads']):
@@ -67,9 +65,9 @@ class Engine:
         self._stop = asyncio.ensure_future(self.stop())
         self._tasks.append(self._stop)
         # add signal handler
-        self._loop.add_signal_handler(
-                getattr(signal, 'SIGINT'),
-                functools.partial(self.signalhandler, 'SIGINT'))
+        self._loop.add_signal_handler(getattr(signal, 'SIGINT'),
+                                      functools.partial(self.signalhandler,
+                                                        'SIGINT'))
         try:
             self._loop.run_until_complete(asyncio.wait(self._tasks))
         finally:

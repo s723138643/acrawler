@@ -65,6 +65,16 @@ class BlumeFilter(BaseFilter):
             return True
         return False
 
+    @staticmethod
+    def clean(settings):
+        path = pathlib.Path(settings['db_path'])
+        blumedb = path / settings['blumedb']
+        if blumedb.is_file():
+            blumedb.unlink()
+        sqlitedb = path / settings['sqlitedb']
+        if sqlitedb.is_file():
+            sqlitedb.unlink()
+
     def close(self):
         self._blumefilter.close()
         self._db.commit()

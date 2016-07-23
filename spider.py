@@ -20,9 +20,8 @@ class Spider:
         self._name = str(self.count)
         self._headers = self._settings.get('headers', None)
         self._cookie = CookieJar()
-        self._session = aiohttp.ClientSession(
-                headers=self._headers,
-                cookies=self._cookie)
+        self._session = aiohttp.ClientSession(headers=self._headers,
+                                              cookies=self._cookie)
         self._closed = False
         self._encoding = None
         Spider.count += 1

@@ -11,15 +11,17 @@ def get_deep(path):
 
 
 class BaseFilter:
+    hosts = None
+
     def __init__(self, settings):
-        self.hosts = set()
         self.settings = settings
         self.hostonly = self.settings.get('hostonly')
         self.maxdeep = self.settings.get('maxdeep')
         self.maxredirect = self.settings.get('maxredirect')
 
-    def set_hosts(self, hosts):
-        self.hosts.update(hosts)
+    @classmethod
+    def set_hosts(cls, hosts):
+        cls.hosts = hosts
 
     def url_allowed(self, url, redirect):
         if not self.url_ok(url):
@@ -28,7 +30,7 @@ class BaseFilter:
         _, host, path, *x = uparse.urlparse(url)
 
         if self.hostonly and not self.host_ok(host):
-            logger.debug('Host Error <{}>'.format(host))
+            logger.debug('{} not in {}'.format(host, self.hosts))
             return False
         if self.maxredirect and 0 < self.maxredirect < redirect:
             logger.debug('Maxredirect Error <{} [{}]>'.format(url, redirect))
