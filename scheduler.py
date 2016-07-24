@@ -15,7 +15,7 @@ class Scheduler:
     def __init__(self, settings, FilterClass, QueueClass, loop=None):
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._urlfilter = FilterClass(settings['filter'])
-        self.fetchdiskq = QueueClass(settings['queue'], loop)
+        self.fetchdiskq = QueueClass(settings['queue'], loop=loop)
         self._settings = settings
 
     async def add(self, requests):

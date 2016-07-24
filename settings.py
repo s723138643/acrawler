@@ -2,6 +2,12 @@ import json
 import os.path
 
 DEFAULT_CONFIG = {
+        # 设置默认class
+        'EngineClass': 'crawler.engine.Engine',
+        'SchedulerClass': 'crawler.scheduler.Scheduler',
+        'FilterClass': 'crawler.sfilter.BlumeFilter',
+        'QueueClass': 'crawler.squeue.PrioritySQLiteQueue',
+        # 以下是各模块设置
         'spider': {
             'headers': {
                 'User-Agent': (
@@ -15,8 +21,20 @@ DEFAULT_CONFIG = {
             },
         'scheduler': {
             'queue':{
-                'task_path': './task',
-                'task_name': 'task_priority'
+                'sqlite_path': './task',
+                'sqlite_dbname': 'task_priority',
+                'mysql_config': {
+                        'host': '127.0.0.1',
+                        'user': 'rigel',
+                        'password': 'F=ma',
+                        'db': 'queue'
+                    },
+                "mysql_tablename": 'task_priority',
+                'mongo_config': {
+                    'host': '127.0.0.1'
+                    },
+                'mongo_dbname': 'queue',
+                'mongo_collectionname': 'task_priority'
                 },
             'filter': {
                 'hostonly': True,

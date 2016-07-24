@@ -1,5 +1,6 @@
 from .model import Request
 from .queuelib import sqlitequeue as sqliteq
+from .queuelib import mysqlqueue as mysqlq
 from .queuelib.base import Empty, Full
 
 
@@ -20,8 +21,7 @@ def _serializePriorityQueue(queueClass, unpickleFun):
     class SerialzeQueue(queueClass):
 
         def put_nowait(self, items):
-            item, priority = items
-            super(SerialzeQueue, self).put_nowait((item, priority))
+            super(SerialzeQueue, self).put_nowait(items)
 
         def get_nowait(self):
             item, priority = super(SerialzeQueue, self).get_nowait()
@@ -42,3 +42,6 @@ FifoSQLiteQueue = _serializeQueue(
 PrioritySQLiteQueue = _serializePriorityQueue(
         sqliteq.PrioritySQLiteQueue,
         unpickleNode)
+
+PriorityMysqlQueue = _serializePriorityQueue(mysqlq.PriorityMysqlQueue,
+                                             unpickleNode)

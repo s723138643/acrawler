@@ -1,11 +1,9 @@
 import argparse
 import logging
+import importlib
 
-from .engine import Engine
-from .sfilter import BlumeFilter
-from .scheduler import Scheduler
-from .squeue import PrioritySQLiteQueue
 from .settings import get_settings_from_file, DEFAULT_CONFIG
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -28,8 +26,16 @@ def get_args():
 
     return parser.parse_args()
 
-def execute(SpiderClass, *, SchedulerClass=Scheduler,
-            QueueClass=PrioritySQLiteQueue, FilterClass=BlumeFilter):
+
+def split_moduler(moduler):
+    assert type(moduler) is str, 'moduler is not a str'
+    x = moduler.split('.')
+    m = '.'.join(x[:-1])
+    return m, x[-1]
+
+
+def execute(SpiderClass, *, SchedulerClass=None,
+            QueueClass=None, FilterClass=None, EngineClass=None):
     args = get_args()
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -42,13 +48,35 @@ def execute(SpiderClass, *, SchedulerClass=Scheduler,
         settings = get_settings_from_file(args.config)
     else:
         settings = DEFAULT_CONFIG
+
+    # import modules
+    if SchedulerClass is None:
+        moduler, name = split_moduler(settings['SchedulerClass'])
+        m = importlib.import_module(moduler)
+        SchedulerClass = getattr(m, name)
+    if QueueClass is None:
+        moduler, name = split_moduler(settings['QueueClass'])
+        m = importlib.import_module(moduler)
+        QueueClass = getattr(m, name)
+    if FilterClass is None:
+        moduler, name = split_moduler(settings['FilterClass'])
+        m = importlib.import_module(moduler)
+        FilterClass = getattr(m, name)
+    if EngineClass is None:
+        moduler, name = split_moduler(settings['EngineClass'])
+        m = importlib.import_module(moduler)
+        EngineClass = getattr(m, name)
+
+    # check resume
     if not args.resume:
         FilterClass.clean(settings['scheduler']['filter'])
         QueueClass.clean(settings['scheduler']['queue'])
+
     if args.threads and args.threads > 0:
         settings['engine']['threads'] = args.threads
-    engine = Engine(settings, SpiderClass, SchedulerClass,
-                    QueueClass, FilterClass)
+
+    engine = EngineClass(settings, SpiderClass, SchedulerClass,
+                         QueueClass, FilterClass)
     engine.run(resume=args.resume)
 
 if __name__ == '__main__':
