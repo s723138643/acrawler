@@ -1,6 +1,6 @@
 import pymongo
 
-from .base import BaseQueue
+from .base import BaseQueue, Empty
 
 
 class PriorityMongoQueue(BaseQueue):
@@ -14,6 +14,14 @@ class PriorityMongoQueue(BaseQueue):
         self._db = self._client.get_database(settings['mongo_dbname'])
         self._priorities = set()
         self._basename = settings['mongo_collectionname']
+        if self._db.collection_names():
+            self._resume()
+
+    def _resume(self):
+        for name in self._db.collection_names():
+            tmp = name.split('_')
+            priority = int(tmp[-1])
+            self._priorities.add(priority)
 
     def _get_collection(self, priority):
         if priority not in self._priorities:
@@ -32,6 +40,7 @@ class PriorityMongoQueue(BaseQueue):
             if result:
                 del result['_id']
                 return result, priority
+        raise Empty
 
     @staticmethod
     def clean(settings):

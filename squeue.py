@@ -1,6 +1,7 @@
 from .model import Request
 from .queuelib import sqlitequeue as sqliteq
 from .queuelib import mysqlqueue as mysqlq
+from .queuelib import mongodb as mongoq
 from .queuelib.base import Empty, Full
 
 
@@ -30,18 +31,23 @@ def _serializePriorityQueue(queueClass, unpickleFun):
     return SerialzeQueue
 
 
-def unpickleNode(node):
+def unpicklefromSQLDB(node):
     node['filter_ignore'] = True if node['filter_ignore'] > 0 else False
     return Request.from_dict(node)
 
 
-FifoSQLiteQueue = _serializeQueue(
-        sqliteq.FifoSQLiteQueue,
-        unpickleNode)
+def unpicklefromMongoDB(item):
+    return Request.from_dict(item)
 
-PrioritySQLiteQueue = _serializePriorityQueue(
-        sqliteq.PrioritySQLiteQueue,
-        unpickleNode)
+
+FifoSQLiteQueue = _serializeQueue(sqliteq.FifoSQLiteQueue,
+                                  unpicklefromSQLDB)
+
+PrioritySQLiteQueue = _serializePriorityQueue(sqliteq.PrioritySQLiteQueue,
+                                              unpicklefromSQLDB)
 
 PriorityMysqlQueue = _serializePriorityQueue(mysqlq.PriorityMysqlQueue,
-                                             unpickleNode)
+                                             unpicklefromSQLDB)
+
+PriorityMongoQueue = _serializePriorityQueue(mongoq.PriorityMongoQueue,
+                                             unpicklefromMongoDB)

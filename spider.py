@@ -40,8 +40,8 @@ class Spider:
             if isinstance(task, str) and task == 'quit':
                 logger.debug('<spider-{}> quit'.format(self._name))
                 break
-            logger.debug('<spider-{}> got task:<{}>'.format(
-                self._name, task.url))
+            logger.debug('<spider-{}> got task:<{}>'.format(self._name,
+                                                            task.url))
             fetcher = getattr(self, task.fetcher or '', self.fetch)
             try:
                 response = await fetcher(task)
