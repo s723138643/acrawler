@@ -56,8 +56,8 @@ class Engine:
             requests = self._SpiderClass.start_request()
             self._loop.run_until_complete(self._scheduler.add(requests))
         for i in range(self._settings['threads']):
-            spider = self._SpiderClass(
-                    self, self._spider_settings, self._loop)
+            spider = self._SpiderClass(self, self._spider_settings,
+                                       self._loop)
             self._spiders.append(spider)
             self._tasks.append(asyncio.ensure_future(spider.run()))
         self._engine = asyncio.ensure_future(self.engine())
