@@ -49,7 +49,10 @@ class Spider:
                 logger.warn('fetch error:{}'.format(e))
                 task.filter_ignore = True
                 await self._engine.send_result(task)
+                continue
             else:
+                if not response:
+                    continue
                 parser = getattr(self, task.parser or '', self.parse)
                 result = parser(response)
                 if result:
