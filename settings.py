@@ -1,5 +1,5 @@
 import json
-import os.path
+import pathlib
 
 DEFAULT_CONFIG = {
         # 设置默认class
@@ -50,8 +50,9 @@ DEFAULT_CONFIG = {
 
 def get_settings_from_file(path):
     settings = DEFAULT_CONFIG
-    if os.path.isfile(path):
-        with open(path, 'r') as f:
+    p = pathlib.Path(path)
+    if p.is_file():
+        with p.open('r') as f:
             tmp = json.load(f)
         merge_settings(settings, tmp)
     return settings
@@ -66,6 +67,13 @@ def merge_settings(default, current):
                 if not isinstance(current[key], dict):
                     default[key] = current[key]
     return default
+
+def make_config(path):
+    settings = DEFAULT_CONFIG
+    p = pathlib.Path(path)
+    with p.open('w') as f:
+        json.dump(settings, f, indent=True)
+
 
 if __name__ == '__main__':
     print(type(DEFAULT_CONFIG))

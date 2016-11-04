@@ -1,6 +1,9 @@
 import asyncio
 import logging
 
+from .model import Request
+
+
 logger = logging.getLogger('Spider')
 
 
@@ -10,6 +13,8 @@ class AbstractSpider:
 
     @classmethod
     def start_request(cls):
+        '''bootstrap spider, may called by engine
+        '''
         raise NotImplementedError
 
     async def run(self):
@@ -36,7 +41,7 @@ class BaseSpider(AbstractSpider):
         self._tasks = asyncio.Queue()
 
     async def run(self):
-        await self._engine.register(self)
+        await self._engine.register(self)   # register spider to engine first
         while True:
             task = await self._tasks.get()
             if isinstance(task, str) and task == 'quit':
@@ -47,10 +52,8 @@ class BaseSpider(AbstractSpider):
             fetcher = getattr(self, task.fetcher or '', self.fetch)
             try:
                 response = await fetcher(task)
-            except (IOError, OSError) as e:
+            except Exception as e:
                 logger.warn('fetch error:{}'.format(e))
-                task.filter_ignore = True
-                await self._engine.send_result(task)
                 continue
             else:
                 if not response:
@@ -58,13 +61,31 @@ class BaseSpider(AbstractSpider):
                 parser = getattr(self, task.parser or '', self.parse)
                 result = parser(response)
                 if result:
-                    await self._engine.send_result(result)
+                    await self._send_result(result)
             finally:
+                # register spider to engine again
                 await self._engine.register(self)
         self.close()
 
+    async def _send_result(self, results):
+        # send result to engine
+        if not hasattr(results, '__iter__'):
+            results = (results, )
+
+        requests = []
+        for result in results:
+            if result and isinstance(result, Request):
+                requests.append(result)
+            else:
+                logger.debug('func{_send_result} excepted a Request instance')
+        await self._engine.send_result(requests)
+
     async def send(self, task):
+        '''send task to spider
+        task: a Request instance
+        '''
         await self._tasks.put(task)
 
     async def stop(self):
+        # send 'quit' message to spider, but spider do not stop immediately
         await self._tasks.put('quit')

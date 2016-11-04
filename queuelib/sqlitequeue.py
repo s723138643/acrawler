@@ -169,6 +169,8 @@ class PrioritySQLiteQueue(BaseQueue):
     @staticmethod
     def clean(settings):
         dbpath = Path(settings.get('sqlite_path', './'))
+        if not dbpath.is_dir():
+            return
         basename = settings.get('sqlite_dbname', 'task_priority')
         for f in dbpath.iterdir():
             if f.match(basename+'_*.db'):

@@ -18,9 +18,8 @@ class Scheduler:
         self.fetchdiskq = QueueClass(settings['queue'], loop=loop)
         self._settings = settings
 
-    async def add(self, requests):
-        for request in requests:
-            await self._add_request(request)
+    async def add(self, request):
+        await self._add_request(request)
 
     async def _add_request(self, request):
         if request.filter_ignore:

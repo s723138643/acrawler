@@ -3,6 +3,7 @@ import logging
 import importlib
 
 from .settings import get_settings_from_file, DEFAULT_CONFIG
+from .settings import make_config
 
 
 def get_args():
@@ -17,8 +18,14 @@ def get_args():
             help='ignore task remaind in queue, start a new task')
     parser.add_argument(
             '-c', '--config',
-            dest='config', default='',
+            dest='config', default='config.json',
             help='specify the config file to use')
+    parser.add_argument(
+            '-m', '--make',
+            dest='make', action='store_true',
+            help='create the default config file "config.json", '
+                 'and exit'
+            )
     parser.add_argument(
             '-d', '--debug',
             dest='debug', action="store_true",
@@ -37,6 +44,9 @@ def split_moduler(moduler):
 def execute(SpiderClass, *, SchedulerClass=None,
             QueueClass=None, FilterClass=None, EngineClass=None):
     args = get_args()
+    if args.make:
+        make_config('./config.json')
+        return
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
         logging.debug('enable debug mode, set logger Level to DEBUG')
@@ -67,17 +77,12 @@ def execute(SpiderClass, *, SchedulerClass=None,
         m = importlib.import_module(moduler)
         EngineClass = getattr(m, name)
 
-    # check resume
-    if not args.resume:
-        FilterClass.clean(settings['scheduler']['filter'])
-        QueueClass.clean(settings['scheduler']['queue'])
-
     if args.threads and args.threads > 0:
         settings['engine']['threads'] = args.threads
 
     engine = EngineClass(settings, SpiderClass, SchedulerClass,
-                         QueueClass, FilterClass)
-    engine.run(resume=args.resume)
+                         QueueClass, FilterClass, resume=args.resume)
+    engine.run()
 
 if __name__ == '__main__':
     print(get_args())

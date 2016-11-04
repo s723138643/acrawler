@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import signal
+import pathlib
 import functools
 
 from urllib.parse import urlparse
@@ -21,24 +22,43 @@ def get_hosts_from_urls(urls):
 class Engine:
     def __init__(self, settings, SpiderClass,
                  SchedulerClass, QueueClass,
-                 FilterClass, loop=None):
+                 FilterClass, loop=None, resume=True):
         self._loop = asyncio.get_event_loop() if not loop else loop
-        self._settings = settings.get('engine', {})
-        hosts = get_hosts_from_urls(SpiderClass.start_urls)
-        FilterClass.set_hosts(hosts)
-        self._scheduler = SchedulerClass(settings.get('scheduler', {}),
-                                         FilterClass, QueueClass,
-                                         self._loop)
+        self._flag = '.engine'
+        self._settings = settings
         self._SpiderClass = SpiderClass
-        self._spider_settings = settings.get('spider', {})
+        self._SchedulerClass = SchedulerClass
+        self._QueueClass = QueueClass
+        self._FilterClass = FilterClass
+
+        self._scheduler = None
+        self._hosts = None
 
         self._waiters = asyncio.Queue()
         self._spiders = []
         self._tasks = []
 
+        self._threads = self._settings['engine'].get('threads', '1')
         self._engine = None
         self._stop = None
         self._quit = asyncio.Event(loop=self._loop)
+        self._resume = resume
+
+        self._initial()
+
+    def _initial(self):
+        if not self._resume:
+            self._QueueClass.clean(self._settings['scheduler']['queue'])
+            self._FilterClass.clean(self._settings['scheduler']['filter'])
+            f = pathlib.Path(self._flag)
+            if f.is_file():
+                f.unlink()
+        self._hosts = get_hosts_from_urls(self._SpiderClass.start_urls)
+        self._FilterClass.set_hosts(self._hosts)
+        self._scheduler = self._SchedulerClass(
+                self._settings.get('scheduler', {}),
+                self._FilterClass, self._QueueClass,
+                self._loop)
 
     def signalhandler(self, signame):
         logger.warning('got signal {}'.format(signame))
@@ -51,12 +71,20 @@ class Engine:
         for worker in self._spiders:
             await worker.send(msg)
 
-    def run(self, resume=True):
-        if not resume:
+    def need_boost(self):
+        f = pathlib.Path(self._flag)
+        if f.is_file():
+            return False
+        else:
+            f.touch()
+            return True
+
+    def run(self):
+        if self.need_boost():
             requests = self._SpiderClass.start_request()
-            self._loop.run_until_complete(self._scheduler.add(requests))
-        for i in range(self._settings['threads']):
-            spider = self._SpiderClass(self, self._spider_settings,
+            self._loop.run_until_complete(self.send_result(requests))
+        for i in range(self._threads):
+            spider = self._SpiderClass(self, self._settings['spider'],
                                        self._loop)
             self._spiders.append(spider)
             self._tasks.append(asyncio.ensure_future(spider.run()))
@@ -75,9 +103,13 @@ class Engine:
             self._loop.close()
 
     async def send_result(self, result):
-        if not hasattr(result, '__iter__'):
-            result = (result,)
-        await self._scheduler.add(result)
+        if not result:
+            logger.debug('add None value to Scheduler')
+        else:
+            if not hasattr(result, '__iter__'):
+                result = (result, )
+            for r in result:
+                await self._scheduler.add(r)
 
     async def engine(self):
         while True:

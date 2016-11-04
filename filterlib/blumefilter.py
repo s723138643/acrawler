@@ -1,7 +1,5 @@
 import logging
-import sqlite3
 import pathlib
-from hashlib import sha256
 
 import pyblume
 
@@ -9,61 +7,30 @@ from .basefilter import BaseFilter
 
 logger = logging.getLogger('Filter')
 
-_sql_create = '''CREATE TABLE IF NOT EXISTS urls
- (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
- url VCHAR(255) NOT NULL UNIQUE)'''
-
-_sql_put = 'INSERT INTO urls (url) VALUES (sha256(?))'
-
 
 class BlumeFilter(BaseFilter):
     def __init__(self, settings):
-        super(BlumeFilter, self).__init__(settings)
-        self._closed = False
+        super().__init__(settings)
+        self._blumeclosed = False
         path = settings.get('db_path')
         self._path = pathlib.Path(path)
-        if not self._path.exists() or not self._path.is_dir():
+        if not self._path.exists():
             self._path.mkdir()
         blumefile = settings.get('blumedb')
-        bp = self._path / blumefile
-        if bp.is_file():
-            self._blumefilter = pyblume.open(str(bp), for_write=1)
+        self._blumedb = self._path / blumefile
+        if self._blumedb.is_file():
+            self._blumefilter = pyblume.open(str(self._blumedb), for_write=1)
         else:
             self._blumefilter = pyblume.Filter(
-                    1024*1024*10, 0.000001, str(bp))
-        sqlite3file = settings.get('sqlitedb')
-        self._db = sqlite3.Connection(str(self._path / sqlite3file))
-        self._db.create_function(
-                'sha256', 1,
-                lambda x: sha256(x.encode()).hexdigest())
-        self._cursor = self._db.cursor()
-        self._cursor.execute(_sql_create)
-
-    @staticmethod
-    def hash_it(url):
-        return sha256(url.encode()).hexdigest()
+                    1024*1024*10, 0.000001, str(self._blumedb))
 
     def had_seen(self, url):
         if url in self._blumefilter:
-            if self.is_inSQLite(url):
-                logger.debug('url <{}> is crawed, ignore'.format(url))
-                return True
-            return False
+            logger.debug('url <{}> is crawed, ignore'.format(url))
+            return True
         else:
-            self.add2SQLite(url)
             self._blumefilter.add(url)
             return False
-
-    def add2SQLite(self, url):
-        self.is_inSQLite(url)
-
-    def is_inSQLite(self, url):
-        # print('SQLite test url {}'.format(url))
-        try:
-            self._cursor.execute(_sql_put, (url, ))
-        except sqlite3.IntegrityError:
-            return True
-        return False
 
     @staticmethod
     def clean(settings):
@@ -71,18 +38,13 @@ class BlumeFilter(BaseFilter):
         blumedb = path / settings['blumedb']
         if blumedb.is_file():
             blumedb.unlink()
-        sqlitedb = path / settings['sqlitedb']
-        if sqlitedb.is_file():
-            sqlitedb.unlink()
 
     def close(self):
+        super().close()
         self._blumefilter.close()
-        self._db.commit()
-        self._db.close()
-        self._closed = True
+        self._blumeclosed = True
 
     def __del__(self):
-        super(BlumeFilter, self).close()
-        if not self._closed:
+        if not self._blumeclosed:
             logger.warn('Filter not closed')
             self.close()
