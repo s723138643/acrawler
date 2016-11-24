@@ -24,7 +24,7 @@ class Engine:
                  SchedulerClass, QueueClass,
                  FilterClass, loop=None, resume=True):
         self._loop = asyncio.get_event_loop() if not loop else loop
-        self._flag = '.engine'
+        self._first_start_file = '.engine'
         self._settings = settings
         self._SpiderClass = SpiderClass
         self._SchedulerClass = SchedulerClass
@@ -43,6 +43,7 @@ class Engine:
         self._stop = None
         self._quit = asyncio.Event(loop=self._loop)
         self._resume = resume
+        self._interrupt = 0
 
         self._initial()
 
@@ -50,10 +51,13 @@ class Engine:
         if not self._resume:
             self._QueueClass.clean(self._settings['scheduler']['queue'])
             self._FilterClass.clean(self._settings['scheduler']['filter'])
-            f = pathlib.Path(self._flag)
+            f = pathlib.Path(self._first_start_file)
             if f.is_file():
                 f.unlink()
-        self._hosts = get_hosts_from_urls(self._SpiderClass.start_urls)
+        if self._SpiderClass.hosts:
+            self._hosts = self._SpiderClass.hosts
+        else:
+            self._hosts = get_hosts_from_urls(self._SpiderClass.start_urls)
         self._FilterClass.set_hosts(self._hosts)
         self._scheduler = self._SchedulerClass(
                 self._settings.get('scheduler', {}),
@@ -62,6 +66,7 @@ class Engine:
 
     def signalhandler(self, signame):
         logger.warning('got signal {}'.format(signame))
+        self._interrupt += 1
         self.quit()
 
     async def register(self, spider):
@@ -72,7 +77,7 @@ class Engine:
             await worker.send(msg)
 
     def need_boost(self):
-        f = pathlib.Path(self._flag)
+        f = pathlib.Path(self._first_start_file)
         if f.is_file():
             return False
         else:
@@ -113,21 +118,23 @@ class Engine:
 
     async def engine(self):
         while True:
+            waiter = await self._waiters.get()
             try:
                 task = self._scheduler.next_nowait()
             except QueueEmpty:
-                if self._waiters.qsize() == len(self._spiders):
-                    logger.debug('tasks were done, quit...')
-                    await self.broadcast('quit')
-                    self._stop.cancel()
+                if self._waiters.qsize() == len(self._spiders)-1:
+                    logger.debug('all tasks had done')
+                    #await self.broadcast('quit')
+                    #self._stop.cancel()
+                    self.quit()
                     break   # tasks is done, break from loop
                 else:
-                    await asyncio.sleep(0.2)
+                    await self._waiters.put(waiter)
+                    await asyncio.sleep(0.5)
                     continue
             else:
-                waiter = await self._waiters.get()
                 await waiter.send(task)
-        logger.debug('engine quit')
+        logger.debug('engine stop task assignments...')
 
     async def stop(self):
         await self._quit.wait()
@@ -137,4 +144,8 @@ class Engine:
             self._engine.cancel()
 
     def quit(self):
-        self._quit.set()
+        if self._interrupt == 1 or self._interrupt == 0:
+            self._quit.set()
+        elif self._interrupt > 5:
+            for t in self._tasks:
+                t.cancel()
