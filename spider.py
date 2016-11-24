@@ -26,7 +26,8 @@ class Spider(BaseSpider):
             status = response.status
             headers = response.headers
 
-        return Response(request.url, html, status=status, headers=headers)
+        return Response(html, status=status, request=request,
+                        headers=headers)
 
     def parse(self, response):
         raise NotImplementedError

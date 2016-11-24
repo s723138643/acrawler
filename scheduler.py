@@ -1,7 +1,7 @@
 import logging
 import asyncio
 
-from .squeue import Empty
+from .queuelib import Empty
 
 
 logger = logging.getLogger('Scheduler')
@@ -23,23 +23,23 @@ class Scheduler:
 
     async def _add_request(self, request):
         if request.filter_ignore:
-            await self.fetchdiskq.put((request, request.priority))
+            await self.fetchdiskq.put(request)
             logger.warn('add request <{}> ignore filter'.format(request.url))
         else:
             if self._urlfilter.url_allowed(request.url, request.redirect):
-                await self.fetchdiskq.put((request, request.priority))
+                await self.fetchdiskq.put(request)
             else:
                 logger.debug('request is in queue, igonre')
 
     def next_nowait(self):
         try:
-            req, _ = self.fetchdiskq.get_nowait()
+            req = self.fetchdiskq.get_nowait()
         except Empty:
             raise QueueEmpty()
         return req
 
     async def next(self):
-        req, _ = await self.fetchdiskq.get()
+        req = await self.fetchdiskq.get()
         return req
 
     def empty(self):

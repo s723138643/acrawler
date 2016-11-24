@@ -5,8 +5,8 @@ DEFAULT_CONFIG = {
         # 设置默认class
         'EngineClass': 'crawler.engine.Engine',
         'SchedulerClass': 'crawler.scheduler.Scheduler',
-        'FilterClass': 'crawler.sfilter.BlumeFilter',
-        'QueueClass': 'crawler.squeue.PrioritySQLiteQueue',
+        'FilterClass': 'crawler.filterlib.BlumeFilter',
+        'QueueClass': 'crawler.queuelib.PrioritySQLiteQueue',
         # 以下是各模块设置
         'spider': {
             'headers': {
