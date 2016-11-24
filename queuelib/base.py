@@ -1,6 +1,11 @@
 import asyncio
+import pickle
+import logging
 
 from collections import deque
+
+
+logger = logging.getLogger('queue')
 
 
 class Empty(Exception):
@@ -13,8 +18,9 @@ class Full(Exception):
 
 class BaseQueue:
 
-    def __init__(self, loop=None):
+    def __init__(self, maxsize=0, loop=None):
         self._loop = asyncio.get_event_loop() if not loop else loop
+        self._maxsize = maxsize
         self._putters = deque()
         self._getters = deque()
 
@@ -86,3 +92,10 @@ class BaseQueue:
     @staticmethod
     def clean(settings):
         raise NotImplementedError
+
+
+def serialze(item):
+    return pickle.dumps(item)
+
+def unserialze(raw_data):
+    return pickle.loads(raw_data)

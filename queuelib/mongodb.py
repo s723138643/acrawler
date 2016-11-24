@@ -1,14 +1,13 @@
 import pymongo
 
-from .base import BaseQueue, Empty
+from .base import BaseQueue, Empty, serialze, unserialze
 
 
 class PriorityMongoQueue(BaseQueue):
 
     def __init__(self, settings, maxsize=0, loop=None):
-        super(PriorityMongoQueue, self).__init__(loop=loop)
+        super(PriorityMongoQueue, self).__init__(maxsize=maxsize, loop=loop)
         self._settings = settings
-        self._maxsize = maxsize
         config = settings['mongo_config']
         self._client = pymongo.MongoClient(**config)
         self._db = self._client.get_database(settings['mongo_dbname'])
@@ -28,18 +27,29 @@ class PriorityMongoQueue(BaseQueue):
             self._priorities.add(priority)
         return '{}_{}'.format(self._basename, priority)
 
-    def _put(self, items):
-        request, priority = items
-        col = self._db.get_collection(self._get_collection(priority))
-        col.insert_one(request.to_dict())
+    def _put(self, item):
+        try:
+            serialzed = serialze(item)
+        except Exception as e:
+            logger.error('Serialze Error, {}'.format(e))
+            return
+        data = {'url': item.url, 'priority': item.priority,
+                'created': item.created, 'last_activated': item.last_activated,
+                'retryed': item.retryed, 'serialzed': serialzed}
+        col = self._db.get_collection(self._get_collection(item.priority))
+        col.insert_one(data)
 
     def _get(self):
         for priority in sorted(self._priorities):
             col = self._db.get_collection(self._get_collection(priority))
-            result = col.find_one_and_delete({})
+            result = col.find_one_and_delete({}, {'_id': 0})
             if result:
-                del result['_id']
-                return result, priority
+                try:
+                    unserialzed = unserialze(result)
+                except Exception as e:
+                    logger.error('Unserialze Error, {}'.format(e))
+                else:
+                    return unserialzed
         raise Empty
 
     @staticmethod

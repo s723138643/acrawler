@@ -4,25 +4,22 @@ import asyncio
 
 from pathlib import Path
 
-from .base import Empty, Full, BaseQueue
+from .base import Empty, Full, BaseQueue, serialze, unserialze, logger
+
 
 _sql_create = ('CREATE TABLE IF NOT EXISTS queue '
                '(id INTEGER PRIMARY KEY AUTOINCREMENT,'
                ' url TEXT,'
                ' priority INTEGER,'
-               ' _fetcher TEXT,'
-               ' _parser TEXT,'
-               ' filter_ignore INTEGER,'
-               ' redirect INTEGER,'
                ' created REAL,'
                ' last_activated REAL,'
-               ' retryed INTEGER)')
+               ' retryed INTEGER,'
+               ' serialzed BLOB)')
 _sql_size = 'SELECT COUNT(*) FROM queue'
 _sql_push = ('INSERT INTO queue '
-             '(url,priority,_fetcher,'
-             ' _parser,filter_ignore,redirect,'
-             ' created,last_activated,retryed) '
-             'VALUES (?,?,?,?,?,?,?,?,?)')
+             '(url, priority, created,'
+             ' last_activated, retryed, serialzed) '
+             'VALUES (?,?,?,?,?,?)')
 _sql_pop = 'SELECT * FROM queue ORDER BY id LIMIT 1'
 _sql_del = 'DELETE FROM queue WHERE id = ?'
 
@@ -45,27 +42,37 @@ class FifoSQLiteQueue(BaseQueue):
         cursor.execute(_sql_create)
 
     def _put(self, request):
+        try:
+            serialzed = serialze(request)
+        except Exception as e:
+            logger.error('Serialze Error, {}'.format(e))
+            return
         cursor = self._db.cursor()
         try:
             cursor.execute(_sql_push,
-                           (request.url, request.priority, request.fetcher,
-                            request.parser, 1 if request.filter_ignore else 0,
-                            request.redirect, request.created,
-                            request.last_activated, request.retryed))
+                           (request.url, request.priority, request.created,
+                            request.last_activated, request.retryed,
+                            serialzed))
         finally:
             cursor.close()
 
     def _get(self):
-        cursor = self._db.cursor()
-        try:
-            x = cursor.execute(_sql_pop)
-            row = x.fetchone()
-            cursor.execute(_sql_del, (row['id'],))
-            result_dict = dict(row)
-            del result_dict['id']
-            return result_dict
-        finally:
-            cursor.close()
+        while True:
+            cursor = self._db.cursor()
+            try:
+                x = cursor.execute(_sql_pop)
+                row = x.fetchone()
+                if not row:
+                    raise Empty
+                cursor.execute(_sql_del, (row['id'],))
+                try:
+                    unserialzed = unserialze(row['serialzed'])
+                except Exception as e:
+                    logger.error('Unserialzed Error, {}'.format(e))
+                else:
+                    return unserialzed
+            finally:
+                cursor.close()
 
     @property
     def maxsize(self):
@@ -140,20 +147,21 @@ class PrioritySQLiteQueue(BaseQueue):
 
         return queue
 
-    def _put(self, items):
-        request, priority = items
-        if priority not in self._queues.keys():
-            self._create_queue(priority, loop=self._loop)
-        queue = self._queues.get(priority)
+    def _put(self, item):
+        priority = item.priority
+        if item.priority not in self._queues.keys():
+            queue = self._create_queue(item.priority, loop=self._loop)
+        else:
+            queue = self._queues.get(item.priority)
         if isinstance(queue, FifoSQLiteQueue):
-            queue.put_nowait(request)
+            queue.put_nowait(item)
 
     def _get(self):
         for priority in sorted(self._queues.keys()):
             queue = self._queues[priority]
             if isinstance(queue, FifoSQLiteQueue):
                 try:
-                    return (queue.get_nowait(), priority)
+                    return queue.get_nowait()
                 except Empty:
                     continue
         raise Empty

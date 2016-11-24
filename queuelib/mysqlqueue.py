@@ -7,19 +7,16 @@ from .mysqldb import Connection
 class PriorityMysqlQueue(BaseQueue):
     _create = ('CREATE TABLE IF NOT EXISTS {} '
                '(id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,'
-               ' url VARCHAR(256) NOT NULL,'
+               ' url VARCHAR(1204) NOT NULL,'
                ' priority INT,'
-               ' _fetcher VARCHAR(256),'
-               ' _parser VARCHAR(256),'
-               ' filter_ignore TINYINT(1),'
-               ' redirect INTEGER,'
-               ' created FLOAT,'
-               ' last_activated FLOAT,'
-               ' retryed INTEGER)')
+               ' created TIMESTAMP,'
+               ' last_activated TIMESTAMP,'
+               ' retryed INTEGER,'
+               ' serialzed BLOB NOT NULL)')
     _insert = ('INSERT INTO {} '
-               '(url,priority,_fetcher,_parser,filter_ignore,'
-               ' redirect,created,last_activated,retryed) '
-               'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)')
+               '(url, priority, created, last_activated,'
+               ' retryed, serialzed) '
+               'VALUES (%s, %s, %s, %s, %s, %s)')
     _pop = 'SELECT * FROM {} ORDER BY id LIMIT 1'
     _del = 'DELETE FROM {} WHERE id=%s'
     _qsize = 'SELECT COUNT(*) FROM {}'
@@ -50,28 +47,34 @@ class PriorityMysqlQueue(BaseQueue):
             cur.close()
         self._priorities.add(priority)
 
-    def _put(self, items):
-        request, priority = items
+    def _put(self, request):
+        try:
+            serialzed = serialze(request)
+        except Exception as e:
+            logger.error('Serialze Error, {}'.format(e))
+            return
         if priority not in self._priorities:
             self._create_table(priority)
         query = self._insert.format(self._make_table_name(priority))
         self._db.execute(query, (request.url, request.priority,
-                                 request.fetcher, request.parser,
-                                 1 if request.filter_ignore else 0,
-                                 request.redirect, request.created,
-                                 request.last_activated,
-                                 request.retryed))
+                                 request.created, request.last_activated,
+                                 request.retryed, serialzed))
 
     def _get(self):
         l = sorted(self._priorities)
         for priority in l:
             query = self._pop.format(self._make_table_name(priority))
             item = self._db.get(query)
-            if item:
-                query = self._del.format(self._make_table_name(priority))
-                self._db.execute(query, (item.id,))
-                del item['id']
-                return (item, priority)
+            if not item:
+                continue
+            query = self._del.format(self._make_table_name(priority))
+            self._db.execute(query, (item.id,))
+            try:
+                unserialzed = unserialze(item.serialzed)
+            except Exception as e:
+                logger.error('Unserialz Error, {}'.format(e))
+            else:
+                return (unserialzed, priority)
 
     @staticmethod
     def clean(settings):

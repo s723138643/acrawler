@@ -63,7 +63,7 @@ class Connection:
     def len_of_table(self, table):
         cursor = self._db.cursor()
         try:
-            cursor.execute('SELECT COUNT(*) FROM %s' % table)
+            cursor.execute('SELECT COUNT(*) FROM %s', (table,))
             result = cursor.fetchone()
             return result[0]
         finally:
@@ -80,7 +80,7 @@ class Connection:
     def drop_table(self, table):
         cursor = self._db.cursor()
         try:
-            cursor.execute('DROP TABLE IF EXISTS %s' % table)
+            cursor.execute('DROP TABLE IF EXISTS %s', (table,))
         finally:
             cursor.close()
 
