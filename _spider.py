@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from .model import Request
+from .model import Request, Response
 
 
 logger = logging.getLogger('Spider')
@@ -49,19 +49,33 @@ class BaseSpider(AbstractSpider):
                 break
             logger.debug('<spider-{}> got task:<{}>'
                          .format(self._name, task.url))
-            fetcher = getattr(self, task.fetcher or '', self.fetch)
             try:
+                if not task.fetcher:
+                    fetcher = self.fetch
+                else:
+                    fetcher = getattr(self, task.fetcher)
                 response = await fetcher(task)
+            except AttributeError as e:
+                raise
             except Exception as e:
-                logger.warn('fetch error:{}'.format(e))
+                logger.exception(e)
                 continue
             else:
                 if not response:
                     continue
-                parser = getattr(self, task.parser or '', self.parse)
-                result = parser(response)
-                if result:
-                    await self._send_result(result)
+                elif isinstance(response, Request):
+                    await self._send_result(response)
+                elif isinstance(response, Response):
+                    if not task.parser:
+                        parser = self.parse
+                    else:
+                        parser = getattr(self, task.parser)
+                    result = parser(response)
+                    if result:
+                        await self._send_result(result)
+                else:
+                    raise TypeError('unkown Type:{},'
+                                    'except a Request or Response')
             finally:
                 # register spider to engine again
                 await self._engine.register(self)
@@ -72,13 +86,14 @@ class BaseSpider(AbstractSpider):
         if not hasattr(results, '__iter__'):
             results = (results, )
 
-        requests = []
-        for result in results:
-            if result and isinstance(result, Request):
-                requests.append(result)
-            else:
-                logger.debug('func{_send_result} excepted a Request instance')
-        await self._engine.send_result(requests)
+        def f(before):
+            for result in before:
+                if result and isinstance(result, Request):
+                    yield result
+                else:
+                    logger.warn('func{_send_result} excepted '
+                                'a Request instance')
+        await self._engine.send_result(f(results))
 
     async def send(self, task):
         '''send task to spider
