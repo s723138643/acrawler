@@ -3,7 +3,7 @@ import logging
 from .blumefilter import BlumeFilter
 from .dbfilter import SQLiteFilter
 
-logger = logging.getLogger('Filter')
+logger = logging.getLogger('Scheduler.Filter')
 
 
 class MixedFilter(BlumeFilter, SQLiteFilter):

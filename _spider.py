@@ -8,6 +8,9 @@ logger = logging.getLogger('Spider')
 
 
 class AbstractSpider:
+    start_urls = []
+    hosts = []
+
     def __init__(self, engine, settings, loop=None):
         raise NotImplementedError
 
@@ -16,6 +19,9 @@ class AbstractSpider:
         '''bootstrap spider, may called by engine
         '''
         raise NotImplementedError
+
+    def _initialize(self):
+        pass
 
     async def run(self):
         raise NotImplementedError
@@ -39,6 +45,14 @@ class BaseSpider(AbstractSpider):
         self._engine = engine
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._tasks = asyncio.Queue()
+        self._initialize()
+
+    @classmethod
+    def start_request(cls):
+        '''bootstrap spider, may called by engine
+        '''
+        for url in cls.start_urls:
+            yield Request(url)
 
     async def run(self):
         await self._engine.register(self)   # register spider to engine first

@@ -4,6 +4,9 @@ from .base import BaseQueue
 from .mysqldb import Connection
 
 
+logger = logging.getLogger('Scheduler.Queue')
+
+
 class PriorityMysqlQueue(BaseQueue):
     _create = ('CREATE TABLE IF NOT EXISTS {} '
                '(id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,'
@@ -41,7 +44,7 @@ class PriorityMysqlQueue(BaseQueue):
                         self._make_table_name(priority))
             cur.execute(query)
         except Exception as e:
-            logging.debug('create table error, {}'.format(e))
+            logger.debug('create table error, {}'.format(e))
             raise
         finally:
             cur.close()

@@ -1,6 +1,10 @@
+import logging
 import pymongo
 
 from .base import BaseQueue, Empty, serialze, unserialze
+
+
+logger = logging.getLogger(name='Scheduler.Queue')
 
 
 class PriorityMongoQueue(BaseQueue):

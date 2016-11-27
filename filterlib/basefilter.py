@@ -2,7 +2,7 @@ import logging
 import urllib.parse as uparse
 
 
-logger = logging.getLogger('Filter')
+logger = logging.getLogger('Scheduler.Filter')
 
 
 def get_deep(path):

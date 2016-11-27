@@ -5,9 +5,6 @@ import logging
 from collections import deque
 
 
-logger = logging.getLogger('queue')
-
-
 class Empty(Exception):
     pass
 

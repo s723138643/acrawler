@@ -5,7 +5,7 @@ import pyblume
 
 from .basefilter import BaseFilter
 
-logger = logging.getLogger('Filter')
+logger = logging.getLogger('Scheduler.Filter')
 
 
 class BlumeFilter(BaseFilter):

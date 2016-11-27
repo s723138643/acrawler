@@ -1,10 +1,14 @@
 import re
 import sqlite3
 import asyncio
+import logging
 
 from pathlib import Path
 
-from .base import Empty, Full, BaseQueue, serialze, unserialze, logger
+from .base import Empty, Full, BaseQueue, serialze, unserialze
+
+
+logger = logging.getLogger(name='Scheduler.Queue')
 
 
 _sql_create = ('CREATE TABLE IF NOT EXISTS queue '
@@ -27,7 +31,7 @@ _sql_del = 'DELETE FROM queue WHERE id = ?'
 class FifoSQLiteQueue(BaseQueue):
 
     def __init__(self, settings, maxsize=0, loop=None):
-        super(FifoSQLiteQueue, self).__init__(loop=loop)
+        super().__init__(loop=loop)
         self._closed = False
         self._maxsize = maxsize if maxsize else 0
         self._loop = loop if loop else asyncio.get_event_loop()
@@ -39,7 +43,10 @@ class FifoSQLiteQueue(BaseQueue):
         self._db = sqlite3.Connection(str(self._dbfile), timeout=60)
         self._db.row_factory = sqlite3.Row
         cursor = self._db.cursor()
-        cursor.execute(_sql_create)
+        try:
+            cursor.execute(_sql_create)
+        finally:
+            cursor.close()
 
     def _put(self, request):
         try:
@@ -49,10 +56,9 @@ class FifoSQLiteQueue(BaseQueue):
             return
         cursor = self._db.cursor()
         try:
-            cursor.execute(_sql_push,
-                           (request.url, request.priority, request.created,
-                            request.last_activated, request.retryed,
-                            serialzed))
+            cursor.execute(_sql_push, (request.url, request.priority,
+                                       request.created, request.last_activated,
+                                       request.retryed, serialzed))
         finally:
             cursor.close()
 
@@ -86,14 +92,15 @@ class FifoSQLiteQueue(BaseQueue):
             dbfile.unlink()
 
     def close(self):
-        self._closed = True
-        size = self.__len__()
-        if size > 0:
-            self._db.commit()
-            self._db.close()
-        else:
-            self._db.close()
-            self.clean(self._settings)
+        if not self._closed:
+            self._closed = True
+            size = self.__len__()
+            if size > 0:
+                self._db.commit()
+                self._db.close()
+            else:
+                self._db.close()
+                self.clean(self._settings)
 
     def is_closed(self):
         return self._closed

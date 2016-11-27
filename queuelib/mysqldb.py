@@ -3,6 +3,9 @@ import logging
 import pymysql
 
 
+logger = logging.getLogger('Scheduler.Queue')
+
+
 class Row(dict):
     def __getattr__(self, row):
         try:
@@ -20,7 +23,7 @@ class Connection:
         try:
             self.reconnect()
         except Exception as e:
-            logging.error('Cannot connect to MysqlDB, {}'.format(e))
+            logger.error('Cannot connect to MysqlDB, {}'.format(e))
 
     def reconnect(self):
         self.close()
@@ -72,7 +75,7 @@ class Connection:
     def get_tables(self):
         cursor = self._db.cursor()
         try:
-            cursor.execute('show tables;')
+            cursor.execute('SHOW TABLES;')
             return cursor.fetchone()
         finally:
             cursor.close()

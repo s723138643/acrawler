@@ -12,6 +12,8 @@ class Spider(BaseSpider):
 
     def __init__(self, engine, settings, loop=None):
         super(Spider, self).__init__(engine, settings, loop)
+
+    def _initialize(self):
         self._name = str(self.count)
         self._headers = self._settings.get('headers', None)
         self._cookie = CookieJar()
@@ -20,13 +22,17 @@ class Spider(BaseSpider):
         self._closed = False
         Spider.count += 1
 
-    async def fetch(self, request):
+    async def fetch(self, request, decoder=None):
         async with self._session.get(request.url) as response:
-            html = await response.text()
+            if not decoder:
+                text = await response.text()
+            else:
+                raw = await response.read()
+                text = decoder(raw)
             status = response.status
             headers = response.headers
 
-        return Response(html, status=status, request=request,
+        return Response(text, status=status, request=request,
                         headers=headers)
 
     def parse(self, response):

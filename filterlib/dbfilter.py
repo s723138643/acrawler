@@ -5,7 +5,7 @@ from hashlib import sha256
 
 from .basefilter import BaseFilter
 
-logger = logging.getLogger('Filter')
+logger = logging.getLogger('Scheduler.Filter')
 
 _sql_create = '''CREATE TABLE IF NOT EXISTS urls
  (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
