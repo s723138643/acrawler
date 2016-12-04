@@ -25,6 +25,7 @@ class BaseFilter:
 
     def url_allowed(self, url, redirect):
         if not self.url_ok(url):
+            logger.debug('url:{} is not a valid URL'.format(url))
             return False
 
         _, host, path, *x = uparse.urlparse(url)

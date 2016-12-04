@@ -28,8 +28,6 @@ class Scheduler:
         else:
             if self._urlfilter.url_allowed(request.url, request.redirect):
                 await self.fetchdiskq.put(request)
-            else:
-                logger.debug('request is in queue, igonre')
 
     def next_nowait(self):
         try:
