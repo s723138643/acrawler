@@ -1,3 +1,6 @@
+'''Base spider class, must overwirte by user
+'''
+
 import asyncio
 import logging
 
@@ -8,6 +11,7 @@ logger = logging.getLogger('Spider')
 
 
 class AbstractSpider:
+    """abstract class of spider"""
     start_urls = []
     hosts = []
 
@@ -16,27 +20,38 @@ class AbstractSpider:
 
     @classmethod
     def start_request(cls):
-        '''bootstrap spider, may called by engine
-        '''
+        '''bootstrap spider, may called by engine'''
         raise NotImplementedError
 
     def _initialize(self):
+        '''initialize spider, must overwrite by user
+        so we would\'t override the __init__ method
+        '''
         pass
 
     async def run(self):
+        """run spider"""
         raise NotImplementedError
 
     async def send(self, task):
+        """send message to this spider"""
         raise NotImplementedError
 
     async def stop(self):
+        """send stop message to this spider"""
         raise NotImplementedError
 
     async def fetch(self, request):
+        """fetch document from website specified by request"""
         raise NotImplementedError
 
     def parse(self, response):
+        """parse document"""
         raise NotImplementedError
+
+    def close(self):
+        '''do nothing by default'''
+        pass
 
 
 class BaseSpider(AbstractSpider):
@@ -100,14 +115,14 @@ class BaseSpider(AbstractSpider):
         if not hasattr(results, '__iter__'):
             results = (results, )
 
-        def f(before):
+        def request_filter(before):
             for result in before:
                 if result and isinstance(result, Request):
                     yield result
                 else:
                     logger.warn('func{_send_result} excepted '
                                 'a Request instance')
-        await self._engine.send_result(f(results))
+        await self._engine.send_result(request_filter(results))
 
     async def send(self, task):
         '''send task to spider
