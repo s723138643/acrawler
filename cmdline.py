@@ -41,19 +41,29 @@ def split_moduler(moduler):
     return m, x[-1]
 
 
+def set_log_level(level):
+    logging.getLogger().setLevel(level)
+    logging.debug('enable debug mode, set logger Level to DEBUG')
+    logging.getLogger('Engine').setLevel(level)
+    logging.getLogger('Scheduler').setLevel(level)
+    logging.getLogger('Scheduler.Filter').setLevel(level)
+    logging.getLogger('Scheduler.Queue').setLevel(level)
+    logging.getLogger('Spider').setLevel(level)
+
+
 def execute(SpiderClass, *, SchedulerClass=None,
             QueueClass=None, FilterClass=None, EngineClass=None):
     args = get_args()
+
     if args.make:
         make_config('./config.json')
         return
+
     if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.debug('enable debug mode, set logger Level to DEBUG')
-        logging.getLogger('Engine').setLevel(logging.DEBUG)
-        logging.getLogger('Scheduler').setLevel(logging.DEBUG)
-        logging.getLogger('Filter').setLevel(logging.DEBUG)
-        logging.getLogger('Spider').setLevel(logging.DEBUG)
+        set_log_level(logging.DEBUG)
+    else:
+        set_log_level(logging.INFO)
+
     if args.config:
         settings = get_settings_from_file(args.config)
     else:

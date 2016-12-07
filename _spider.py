@@ -4,7 +4,7 @@
 import asyncio
 import logging
 
-from .model import Request, Response
+from .model import Request, Response, Stop
 
 
 logger = logging.getLogger('Spider')
@@ -22,12 +22,6 @@ class AbstractSpider:
     def start_request(cls):
         '''bootstrap spider, may called by engine'''
         raise NotImplementedError
-
-    def _initialize(self):
-        '''initialize spider, must overwrite by user
-        so we would\'t override the __init__ method
-        '''
-        pass
 
     async def run(self):
         """run spider"""
@@ -60,7 +54,6 @@ class BaseSpider(AbstractSpider):
         self._engine = engine
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._tasks = asyncio.Queue()
-        self._initialize()
 
     @classmethod
     def start_request(cls):
@@ -73,18 +66,19 @@ class BaseSpider(AbstractSpider):
         await self._engine.register(self)   # register spider to engine first
         while True:
             task = await self._tasks.get()
-            if isinstance(task, str) and task == 'quit':
-                logger.debug('<spider-{}> quit'.format(self._name))
+            if isinstance(task, Stop):
+                logger.info('<spider-{}> quit, {}.'
+                            .format(self._name, task.msg))
                 break
-            logger.debug('<spider-{}> got task:<{}>'
-                         .format(self._name, task.url))
+            logger.info('<spider-{}> got task:<{}>'
+                        .format(self._name, task.url))
             try:
                 if not task.fetcher:
                     fetcher = self.fetch
                 else:
                     fetcher = getattr(self, task.fetcher)
                 response = await fetcher(task)
-            except AttributeError as e:
+            except AttributeError as e:   # Can't find fether
                 raise
             except Exception as e:
                 logger.exception(e)
@@ -93,7 +87,7 @@ class BaseSpider(AbstractSpider):
                 if not response:
                     continue
                 elif isinstance(response, Request):
-                    await self._send_result(response)
+                    await self.send_result(response)
                 elif isinstance(response, Response):
                     if not task.parser:
                         parser = self.parse
@@ -101,7 +95,7 @@ class BaseSpider(AbstractSpider):
                         parser = getattr(self, task.parser)
                     result = parser(response)
                     if result:
-                        await self._send_result(result)
+                        await self.send_result(result)
                 else:
                     raise TypeError('unkown Type:{},'
                                     'except a Request or Response')
@@ -110,7 +104,7 @@ class BaseSpider(AbstractSpider):
                 await self._engine.register(self)
         self.close()
 
-    async def _send_result(self, results):
+    async def send_result(self, results):
         # send result to engine
         if not hasattr(results, '__iter__'):
             results = (results, )
@@ -130,6 +124,6 @@ class BaseSpider(AbstractSpider):
         '''
         await self._tasks.put(task)
 
-    async def stop(self):
-        # send 'quit' message to spider, but spider do not stop immediately
-        await self._tasks.put('quit')
+    def stop_all(self):
+        '''stop all spiders, may not stop immediately'''
+        self._engine.quit()

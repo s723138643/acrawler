@@ -11,9 +11,7 @@ class Spider(BaseSpider):
     count = 1
 
     def __init__(self, engine, settings, loop=None):
-        super(Spider, self).__init__(engine, settings, loop)
-
-    def _initialize(self):
+        super().__init__(engine, settings, loop)
         self._name = str(self.count)
         self._headers = self._settings.get('headers', None)
         self._cookie = CookieJar()

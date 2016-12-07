@@ -7,6 +7,8 @@ import functools
 from urllib.parse import urlparse
 
 from .scheduler import QueueEmpty
+from .model import Stop
+
 
 logger = logging.getLogger('Engine')
 
@@ -95,7 +97,7 @@ class Engine:
             self._tasks.append(asyncio.ensure_future(spider.run()))
         self._engine = asyncio.ensure_future(self.engine())
         self._tasks.append(self._engine)
-        self._stop = asyncio.ensure_future(self.stop())
+        self._stop = asyncio.ensure_future(self.wait_stop())
         self._tasks.append(self._stop)
         # add signal handler
         self._loop.add_signal_handler(getattr(signal, 'SIGINT'),
@@ -123,9 +125,7 @@ class Engine:
                 task = self._scheduler.next_nowait()
             except QueueEmpty:
                 if self._waiters.qsize() == len(self._spiders)-1:
-                    logger.debug('all tasks had done')
-                    #await self.broadcast('quit')
-                    #self._stop.cancel()
+                    logger.info('all tasks had done')
                     self.quit()
                     break   # tasks is done, break from loop
                 else:
@@ -136,16 +136,17 @@ class Engine:
                 await waiter.send(task)
         logger.debug('engine stop task assignments...')
 
-    async def stop(self):
+    async def wait_stop(self):
         await self._quit.wait()
         logger.debug("send 'quit' message to spiders")
-        await self.broadcast('quit')
+        await self.broadcast(Stop('quit event recieved'))
         if self._engine:
             self._engine.cancel()
 
     def quit(self):
         if self._interrupt == 1 or self._interrupt == 0:
             self._quit.set()
-        elif self._interrupt > 5:
+        elif self._interrupt > 5:  # force cancel all coroutines
             for t in self._tasks:
-                t.cancel()
+                if not t.cancelled:
+                    t.cancel()

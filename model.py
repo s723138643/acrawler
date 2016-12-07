@@ -9,6 +9,11 @@ from pyquery import PyQuery
 logger = logging.getLogger('spider')
 
 
+class Stop:
+    def __init__(self, msg=None):
+        self.msg = msg
+
+
 class Request:
     __slots__ = ['url', 'priority', '_fetcher', '_parser', 'created',
                  'redirect', 'retryed', 'last_activated', '_extra',
