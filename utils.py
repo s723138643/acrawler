@@ -165,6 +165,7 @@ USER_AGENTS_PC = [
 
 
 def singleton(cls):
+    assert type(cls) is type, 'except a class'
     instance = None
     def inner():
         nonlocal instance
