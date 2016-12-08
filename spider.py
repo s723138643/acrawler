@@ -20,8 +20,8 @@ class Spider(BaseSpider):
         self._closed = False
         Spider.count += 1
 
-    async def fetch(self, request, decoder=None):
-        async with self._session.get(request.url) as response:
+    async def fetch(self, request, *, decoder=None, timeout=None):
+        async with self._session.get(request.url, timeout=timeout) as response:
             if not decoder:
                 text = await response.text()
             else:
@@ -42,5 +42,5 @@ class Spider(BaseSpider):
 
     def __del__(self):
         if not self._closed:
-            logger.warn('<spider-{}> unclosed'.format(self._name))
+            logger.warn('<spider-{}> not closed'.format(self._name))
             self.close()
