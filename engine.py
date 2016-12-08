@@ -146,7 +146,7 @@ class Engine:
     def quit(self):
         if self._interrupt == 1 or self._interrupt == 0:
             self._quit.set()
-        elif self._interrupt > 5:  # force cancel all coroutines
+        elif self._interrupt >= 5:  # force cancel all coroutines
             for t in self._tasks:
                 if not t.cancelled:
                     t.cancel()
