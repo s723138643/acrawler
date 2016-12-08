@@ -173,6 +173,21 @@ def singleton(cls):
         return instance
     return inner
 
+
+def decoder(raw):
+    codecs = ['utf-8', 'gbk', 'gb18030']
+    last_e = None
+    for codec in codecs:
+        try:
+            content = raw.decode(codec)
+        except UnicodeDecodeError as e:
+            last_e = e
+            continue
+        else:
+            return content
+    raise last_e
+
+
 @singleton
 class UserAgent:
     '''general user_agent'''
