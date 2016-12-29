@@ -122,7 +122,7 @@ class Engine:
         while True:
             waiter = await self._waiters.get()
             try:
-                task = self._scheduler.next_nowait()
+                task = await self._scheduler.next(timeout=1)
             except QueueEmpty:
                 if self._waiters.qsize() == len(self._spiders)-1:
                     logger.info('all tasks had done')
@@ -130,11 +130,10 @@ class Engine:
                     break   # tasks is done, break from loop
                 else:
                     await self._waiters.put(waiter)
-                    await asyncio.sleep(0.5)
                     continue
             else:
                 await waiter.send(task)
-        logger.debug('engine stop task assignments...')
+        logger.debug('task assignments stopped...')
 
     async def wait_stop(self):
         await self._quit.wait()
@@ -144,7 +143,7 @@ class Engine:
             self._engine.cancel()
 
     def quit(self):
-        if self._interrupt == 1 or self._interrupt == 0:
+        if self._interrupt <= 1:
             self._quit.set()
         elif self._interrupt >= 5:  # force cancel all coroutines
             for t in self._tasks:

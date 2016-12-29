@@ -30,6 +30,10 @@ def get_args():
             '-d', '--debug',
             dest='debug', action="store_true",
             help='enable debug mode')
+    parser.add_argument(
+            '-w', '--logfile',
+            dest='logfile', default=None,
+            help='write log to logfile')
 
     return parser.parse_args()
 
@@ -41,33 +45,45 @@ def split_moduler(moduler):
     return m, x[-1]
 
 
-def set_log_level(level):
-    logging.getLogger().setLevel(level)
-    logging.debug('enable debug mode, set logger Level to DEBUG')
+def set_logging(level, logfile=None):
+    confdict = {
+        'format': '%(levelname)s-%(name)s-%(funcName)s: %(message)s',
+        'level': level
+    }
+    if logfile:
+        confdict['filename'] = logfile
+
+    logging.basicConfig(**confdict)
     logging.getLogger('Engine').setLevel(level)
     logging.getLogger('Scheduler').setLevel(level)
     logging.getLogger('Scheduler.Filter').setLevel(level)
     logging.getLogger('Scheduler.Queue').setLevel(level)
     logging.getLogger('Spider').setLevel(level)
 
+    if level == logging.DEBUG:
+        logging.warn('debug mode enabled,'
+                     'when error occured spider will stop immediately')
+
 
 def execute(SpiderClass, *, SchedulerClass=None,
-            QueueClass=None, FilterClass=None, EngineClass=None):
+            QueueClass=None, FilterClass=None,
+            EngineClass=None):
     args = get_args()
 
     if args.make:
         make_config('./config.json')
         return
 
-    if args.debug:
-        set_log_level(logging.DEBUG)
-    else:
-        set_log_level(logging.INFO)
-
     if args.config:
         settings = get_settings_from_file(args.config)
     else:
         settings = DEFAULT_CONFIG
+
+    if args.debug:
+        set_logging(logging.DEBUG, args.logfile)
+        settings['spider']['debug'] = True
+    else:
+        set_logging(logging.INFO, args.logfile)
 
     # import modules
     if SchedulerClass is None:
@@ -86,12 +102,15 @@ def execute(SpiderClass, *, SchedulerClass=None,
         moduler, name = split_moduler(settings['EngineClass'])
         m = importlib.import_module(moduler)
         EngineClass = getattr(m, name)
+    del m       # release tmple module m
 
     if args.threads and args.threads > 0:
         settings['engine']['threads'] = args.threads
 
-    engine = EngineClass(settings, SpiderClass, SchedulerClass,
-                         QueueClass, FilterClass, resume=args.resume)
+    engine = EngineClass(settings,
+                         SpiderClass, SchedulerClass,
+                         QueueClass, FilterClass,
+                         resume=args.resume)
     engine.run()
 
 if __name__ == '__main__':

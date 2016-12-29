@@ -43,6 +43,14 @@ class AbstractSpider:
         """parse document"""
         raise NotImplementedError
 
+    async def broadcast(self, msg):
+        """broadcast msg to all spider(include itself)"""
+        pass
+
+    def stop_all(self):
+        """stop all spiders"""
+        pass
+
     def close(self):
         '''do nothing by default'''
         pass
@@ -51,6 +59,7 @@ class AbstractSpider:
 class BaseSpider(AbstractSpider):
     def __init__(self, engine, settings, loop=None):
         self._settings = settings
+        self._debug = settings['debug']
         self._engine = engine
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._tasks = asyncio.Queue()
@@ -75,10 +84,10 @@ class BaseSpider(AbstractSpider):
 
     async def _parse(self, response):
         def do_parse(r):
-            if not r.request.parser:
-                parser = self.parse
-            else:
+            if r.request.parser:
                 parser = getattr(self, r.request.parser)
+            else:
+                parser = self.parse
             return parser(r)
 
         if isinstance(response, Response):
@@ -95,21 +104,23 @@ class BaseSpider(AbstractSpider):
         while True:
             task = await self._tasks.get()
             if isinstance(task, Stop):
-                logger.info('<spider-{}> quit, {}.'.format(self._name,
-                                                           task.msg))
+                logger.info('<spider-{}> quit, {}.'
+                            .format(self._name, task.msg))
                 break
 
             try:
-                logger.info('<spider-{}> got task: {}'.format(self._name,
-                                                              task.url))
+                logger.info('<spider-{}> got task<{}>'
+                            .format(self._name, task.url))
                 response = await self._fetch(task)
                 if response:
                     await self._parse(response)
-                    logger.info('<spider-{}> task: {} done!'
-                                .format(self._name, task.url))
-            except AttributeError as e:   # Can't find fether or parser
-                raise
+                logger.info('<spider-{}> task<{}> done!'
+                            .format(self._name, task.url))
             except Exception as e:
+                if self._debug:
+                    self.stop_all()
+                logger.info('<spider-{}> task<{}> failed!'
+                            .format(self._name, task.url))
                 logger.exception(e)
                 continue
             finally:
@@ -127,15 +138,16 @@ class BaseSpider(AbstractSpider):
                 if result and isinstance(result, Request):
                     yield result
                 else:
-                    logger.warn('func{_send_result} excepted '
-                                'a Request instance')
+                    logger.warn('excepted a Request object')
         await self._engine.send_result(request_filter(results))
 
     async def send(self, task):
-        '''send task to spider
-        task: a Request instance
+        '''send task to spider, used by engine
         '''
         await self._tasks.put(task)
+
+    async def broadcast(self, msg):
+        await self._engine.broadcast(msg)
 
     def stop_all(self):
         '''stop all spiders, may not stop immediately'''

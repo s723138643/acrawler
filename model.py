@@ -15,59 +15,59 @@ class Stop:
 
 
 class Request:
-    __slots__ = ['url', 'priority', '_fetcher', '_parser', 'created',
-                 'redirect', 'retryed', 'last_activated', '_extra',
+    __slots__ = ['url', 'priority', 'fetcher_func', 'parser_func', 'created',
+                 'redirect', 'retryed', 'last_activated', 'extra',
                  'filter_ignore']
 
     def __init__(self, url, *, priority=3, fetcher=None, parser=None,
                  filter_ignore=False):
         self.url = url
+
+        assert isinstance(priority, int), 'priority is not an integer'
+        self.priority = priority
+
         self.redirect = 1
         self.created = time.time()
         self.last_activated = None
         self.retryed = 0
         self.filter_ignore = filter_ignore
 
-        assert type(priority) is int, 'priority is not an integer'
-        self.priority = priority
-
-        assert callable(fetcher) or fetcher is None, 'fetcher is not callable'
-        self._fetcher = fetcher.__name__ if fetcher else None
-
-        assert callable(parser) or parser is None, 'parser is not callable'
-        self._parser = parser.__name__ if parser else None
-
-        self._extra = None
+        if fetcher and not callable(fetcher):
+            raise ValueError('fetcher_func is not callable')
+        # async function cannot be serialzed
+        self.fetcher_func = fetcher.__name__ if fetcher else None
+        if parser and not callable(parser):
+            raise ValueError('parser_func is not callable')
+        self.parser_func = parser.__name__ if parser else None
+        self.extra = None
 
     @property
     def extra_data(self):
-        return self._extra
+        return self.extra
 
     @extra_data.setter
     def extra_data(self, extra):
-        self._extra = extra
+        self.extra = extra
 
     @property
     def parser(self):
-        return self._parser
+        return self.parser_func
 
     @parser.setter
     def parser(self, value):
         if callable(value):
-            self._parser = value.__name__
-        else:
             raise ValueError('{} is not callable'.format(value))
+        self.parser_func = value.__name__
 
     @property
     def fetcher(self):
-        return self._fetcher
+        return self.fetcher_func
 
     @fetcher.setter
     def fetcher(self, value):
-        if callable(value):
-            self._fetcher = value.__name__
-        else:
+        if not callable(value):
             raise ValueError('{} is not callable'.format(value))
+        self.fetcher_func = value.__name__
 
 
 class Response:

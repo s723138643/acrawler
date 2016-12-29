@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
                     ' Gecko/20100101 Firefox/43.0'),
                 },
             'save_cookie': False,
+            'debug': False,
             },
         'engine': {
             'threads': 1

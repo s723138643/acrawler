@@ -4,7 +4,7 @@ from http.cookiejar import CookieJar
 
 from .model import Response
 from ._spider import BaseSpider
-from ._spider import logger as logger
+from ._spider import logger
 
 
 class Spider(BaseSpider):
@@ -12,21 +12,21 @@ class Spider(BaseSpider):
 
     def __init__(self, engine, settings, loop=None):
         super().__init__(engine, settings, loop)
+        self._closed = False
         self._name = str(self.count)
         self._headers = self._settings.get('headers', None)
         self._cookie = CookieJar()
         self._session = aiohttp.ClientSession(headers=self._headers,
                                               cookies=self._cookie)
-        self._closed = False
         Spider.count += 1
 
-    async def fetch(self, request, *, decoder=None, timeout=None):
-        async with self._session.get(request.url, timeout=timeout) as response:
-            if not decoder:
-                text = await response.text()
-            else:
+    async def fetch(self, request, *, decoder=None, **kwargs):
+        async with self._session.get(request.url, **kwargs) as response:
+            if decoder:
                 raw = await response.read()
                 text = decoder(raw)
+            else:
+                text = await response.text()
             status = response.status
             headers = response.headers
 

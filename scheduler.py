@@ -24,7 +24,7 @@ class Scheduler:
     async def _add_request(self, request):
         if request.filter_ignore:
             await self.fetchdiskq.put(request)
-            logger.warn('add request <{}> ignore filter'.format(request.url))
+            logger.debug('add task<{}> ignore filter'.format(request.url))
         else:
             if self._urlfilter.url_allowed(request.url, request.redirect):
                 await self.fetchdiskq.put(request)
@@ -36,9 +36,15 @@ class Scheduler:
             raise QueueEmpty()
         return req
 
-    async def next(self):
-        req = await self.fetchdiskq.get()
-        return req
+    async def next(self, timeout=None):
+        if timeout and timeout > 0:
+            try:
+                t = await asyncio.wait_for(self.fetchdiskq.get(), timeout)
+            except asyncio.TimeoutError:
+                raise QueueEmpty()
+        else:
+            t = await self.fetchdiskq.get()
+        return t
 
     def empty(self):
         return self.fetchdiskq.empty()
