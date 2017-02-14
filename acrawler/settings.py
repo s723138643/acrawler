@@ -3,10 +3,10 @@ import pathlib
 
 DEFAULT_CONFIG = {
         # 设置默认class
-        'EngineClass': 'crawler.engine.Engine',
-        'SchedulerClass': 'crawler.scheduler.Scheduler',
-        'FilterClass': 'crawler.filterlib.BlumeFilter',
-        'QueueClass': 'crawler.queuelib.PrioritySQLiteQueue',
+        'EngineClass': 'acrawler.engine.Engine',
+        'SchedulerClass': 'acrawler.scheduler.Scheduler',
+        'FilterClass': 'acrawler.filterlib.BlumeFilter',
+        'QueueClass': 'acrawler.queuelib.PrioritySQLiteQueue',
         # 以下是各模块设置
         'spider': {
             'headers': {
