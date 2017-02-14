@@ -10,14 +10,13 @@ from ._spider import logger
 class Spider(BaseSpider):
     count = 1
 
-    def __init__(self, engine, settings, loop=None):
-        super().__init__(engine, settings, loop)
+    def initialize(self):
         self._closed = False
         self._name = str(self.count)
         self._headers = self._settings.get('headers', None)
         self._cookie = CookieJar()
         self._session = aiohttp.ClientSession(headers=self._headers,
-                                              cookies=self._cookie)
+                                                    cookies=self._cookie)
         Spider.count += 1
 
     async def fetch(self, request, *, decoder=None, **kwargs):

@@ -20,8 +20,12 @@ class AbstractSpider:
 
     @classmethod
     def start_request(cls):
-        '''bootstrap spider, may called by engine'''
+        '''bootstrap spider, called by engine'''
         raise NotImplementedError
+
+    def initialize(self):
+        '''initialize spider, may overwrite by user'''
+        pass
 
     async def run(self):
         """run spider"""
@@ -100,6 +104,10 @@ class BaseSpider(AbstractSpider):
             raise TypeError('cannot parse {} object'.format(type(response)))
 
     async def run(self):
+        if asyncio.iscoroutinefunction(self.initialize):
+            await self.intialize()
+        else:
+            self.initialize()
         await self._engine.register(self)   # register spider to engine first
         while True:
             task = await self._tasks.get()
