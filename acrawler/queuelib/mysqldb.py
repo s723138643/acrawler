@@ -28,7 +28,7 @@ class Connection:
     def reconnect(self):
         self.close()
         self._db = pymysql.connect(*self._db_args, **self._db_kwargs)
-        self._db.autocommit(True)
+        #self._db.autocommit(True)
 
     def query(self, query, args=None):
         cursor = self._db.cursor()
@@ -66,7 +66,7 @@ class Connection:
     def len_of_table(self, table):
         cursor = self._db.cursor()
         try:
-            cursor.execute('SELECT COUNT(*) FROM %s', (table,))
+            cursor.execute('SELECT COUNT(*) FROM {}'.format(table))
             result = cursor.fetchone()
             return result[0]
         finally:
@@ -106,6 +106,7 @@ class Connection:
 
     def close(self):
         if self._db:
+            self._db.commit()
             self._db.close()
             self._db = None
 

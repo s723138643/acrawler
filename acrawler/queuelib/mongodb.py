@@ -49,7 +49,7 @@ class PriorityMongoQueue(BaseQueue):
             result = col.find_one_and_delete({}, {'_id': 0})
             if result:
                 try:
-                    unserialzed = unserialze(result)
+                    unserialzed = unserialze(result['serialzed'])
                 except Exception as e:
                     logger.error('Unserialze Error, {}'.format(e))
                 else:
