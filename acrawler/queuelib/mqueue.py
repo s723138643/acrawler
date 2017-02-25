@@ -8,19 +8,34 @@ class PriorityQueue(BaseQueue):
     def __init__(self, settings, maxsize=0, loop=None):
         super().__init__(maxsize=maxsize, loop=loop)
         self._settings = settings
-        self._collections = deque()
+        self._prioritys = dict()
+        self._total = 0
 
     def _put(self, item):
-        self._collections.append(item)
+        priority = item.priority
+        if priority in self._prioritys:
+            queue = self._prioritys[priority]
+        else:
+            queue = deque()
+            self._prioritys[priority] = queue
+        queue.append(item)
+        self._total += 1
 
     def _get(self):
-        return self._collections.popleft()
+        for priority in sorted(self._prioritys.keys()):
+            queue = self._prioritys[priority]
+            if not queue.empty():
+                self._total -= 1
+                return queue.popleft()
+        raise Empty
 
     def close(self):
-        self._collections.clear()
+        self._total = 0
+        for queue in self._prioritys.values():
+            queue.clear()
 
     def qsize(self):
-        return len(self._collections)
+        return self._total
 
     @staticmethod
     def clean(settings):

@@ -31,6 +31,7 @@ class PriorityMysqlQueue(BaseQueue):
     _qsize = 'SELECT COUNT(*) FROM {}'
 
     def __init__(self, settings, maxsize=0, loop=None):
+        self._closed = False
         super(PriorityMysqlQueue, self).__init__(loop=loop)
         assert type(maxsize) is int, 'maxsize not an integer'
         self.maxsize = maxsize
@@ -137,5 +138,10 @@ class PriorityMysqlQueue(BaseQueue):
         return self._total
 
     def close(self):
+        self._closed = True
         self._db.commit()
         self._db.close()
+
+    def __del__(self):
+        if not self._closed:
+            self.close()
