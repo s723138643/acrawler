@@ -24,7 +24,7 @@ _sql_push = ('INSERT INTO queue '
              '(url, priority, created,'
              ' last_activated, retryed, serialzed) '
              'VALUES (?,?,?,?,?,?)')
-_sql_pop = 'SELECT * FROM queue ORDER BY id LIMIT 1'
+_sql_pop = 'SELECT id,serialzed FROM queue ORDER BY id LIMIT 1'
 _sql_del = 'DELETE FROM queue WHERE id = ?'
 
 
@@ -66,8 +66,7 @@ class FifoSQLiteQueue(BaseQueue):
         while True:
             cursor = self._db.cursor()
             try:
-                x = cursor.execute(_sql_pop)
-                row = x.fetchone()
+                row = cursor.execute(_sql_pop).fetchone()
                 if not row:
                     raise Empty
                 cursor.execute(_sql_del, (row['id'],))
@@ -94,13 +93,12 @@ class FifoSQLiteQueue(BaseQueue):
     def close(self):
         if not self._closed:
             self._closed = True
-            size = self.__len__()
-            if size > 0:
+            if self.__len__() > 0:
                 self._db.commit()
                 self._db.close()
             else:
                 self._db.close()
-                self.clean(self._settings)
+                self._dbfile.unlink()
 
     def is_closed(self):
         return self._closed
@@ -110,8 +108,11 @@ class FifoSQLiteQueue(BaseQueue):
 
     def __len__(self):
         cursor = self._db.cursor()
-        x = cursor.execute(_sql_size)
-        return x.fetchone()[0]
+        try:
+            x = cursor.execute(_sql_size)
+            return x.fetchone()[0]
+        finally:
+            cursor.close()
 
     def __del__(self):
         if not self._closed:
@@ -135,16 +136,20 @@ class PrioritySQLiteQueue(BaseQueue):
         task_dir = Path(self._path)
         if not task_dir.is_dir():
             task_dir.mkdir()
-        else:
-            for child in task_dir.iterdir():
-                if child.is_file() and child.match(self._basename+'_*.db'):
-                    m = re.search(self._basename+'_(.*)\.db', str(child))
-                    if m:
-                        priority = m.group(1)
-                        tmp = {'sqlite_path': self._path,
-                               'sqlite_dbname': child.name}
-                        queue = FifoSQLiteQueue(tmp, loop=self._loop)
-                        self._queues[int(priority)] = queue
+            return
+
+        for child in task_dir.iterdir():
+            if child.is_file():
+                m = re.match(self._basename+'_(?P<p>\d+)\.db', str(child))
+                if not m:
+                    continue
+                priority = int(m.group('p'))
+                tmp = {
+                    'sqlite_path': self._path,
+                    'sqlite_dbname': child.name
+                }
+                queue = FifoSQLiteQueue(tmp, loop=self._loop)
+                self._queues[priority] = queue
 
     def _create_queue(self, priority, loop=None):
         name = '{}_{}.db'.format(self._basename, priority)
@@ -156,21 +161,20 @@ class PrioritySQLiteQueue(BaseQueue):
 
     def _put(self, item):
         priority = item.priority
-        if item.priority not in self._queues.keys():
-            queue = self._create_queue(item.priority, loop=self._loop)
+        if priority not in self._queues.keys():
+            queue = self._create_queue(priority, loop=self._loop)
         else:
-            queue = self._queues.get(item.priority)
-        if isinstance(queue, FifoSQLiteQueue):
-            queue.put_nowait(item)
+            queue = self._queues.get(priority)
+        queue.put_nowait(item)
 
     def _get(self):
-        for priority in sorted(self._queues.keys()):
-            queue = self._queues[priority]
-            if isinstance(queue, FifoSQLiteQueue):
-                try:
-                    return queue.get_nowait()
-                except Empty:
-                    continue
+        for priority, queue in sorted(self._queues.items()):
+            try:
+                return queue.get_nowait()
+            except Empty:
+                queue.close()
+                del self._queues[priority]
+                continue
         raise Empty
 
     @property
@@ -192,10 +196,9 @@ class PrioritySQLiteQueue(BaseQueue):
                 f.unlink()
 
     def close(self):
-        if self._queues:
-            for i in self._queues.keys():
-                self._queues[i].close()
         self._closed = True
+        for queue in self._queues.values():
+            queue.close()
 
     def is_closed(self):
         return self._closed
