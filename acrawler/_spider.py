@@ -13,7 +13,7 @@ logger = logging.getLogger('Spider')
 class AbstractSpider:
     """abstract class of spider"""
     start_urls = []
-    hosts = []
+    allowed_hosts = set()
 
     def __init__(self, engine, settings, loop=None):
         raise NotImplementedError

@@ -14,11 +14,11 @@ logger = logging.getLogger('Engine')
 
 
 def get_hosts_from_urls(urls):
-    hosts = []
+    hosts = set()
     for url in urls:
         _, host, *x = urlparse(url)
-        hosts.append(host)
-    return set(hosts)
+        hosts.add(host)
+    return hosts
 
 
 class Engine:
@@ -34,7 +34,6 @@ class Engine:
         self._FilterClass = FilterClass
 
         self._scheduler = None
-        self._hosts = None
 
         self._waiters = asyncio.Queue()
         self._spiders = []
@@ -56,11 +55,10 @@ class Engine:
             f = pathlib.Path(self._first_start_file)
             if f.is_file():
                 f.unlink()
-        if self._SpiderClass.hosts:
-            self._hosts = self._SpiderClass.hosts
-        else:
-            self._hosts = get_hosts_from_urls(self._SpiderClass.start_urls)
-        self._FilterClass.set_hosts(self._hosts)
+        hosts = set()
+        hosts.update(self._SpiderClass.allowed_hosts)
+        hosts.update(get_hosts_from_urls(self._SpiderClass.start_urls))
+        self._FilterClass.set_hosts(hosts)
         self._scheduler = self._SchedulerClass(
                 self._settings.get('scheduler', {}),
                 self._FilterClass, self._QueueClass,

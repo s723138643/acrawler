@@ -29,7 +29,8 @@ class Spider(BaseSpider):
             status = response.status
             headers = response.headers
 
-        return Response(text, status=status, request=request,
+        return Response(text, status=status,
+                        request=request,
                         headers=headers)
 
     def parse(self, response):

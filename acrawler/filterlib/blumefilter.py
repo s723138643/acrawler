@@ -24,13 +24,13 @@ class BlumeFilter(BaseFilter):
             self._blumefilter = pyblume.Filter(
                     1024*1024*10, 0.000001, str(self._blumedb))
 
-    def had_seen(self, url):
-        if url in self._blumefilter:
-            logger.debug('url <{}> is crawed, ignore'.format(url))
+    def url_seen(self, url):
+        unique_url = self.url_normalization(url)
+        if unique_url in self._blumefilter:
+            logger.debug('duplicate request<{}> recived'.format(url))
             return True
-        else:
-            self._blumefilter.add(url)
-            return False
+        self._blumefilter.add(unique_url)
+        return False
 
     @staticmethod
     def clean(settings):

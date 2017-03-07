@@ -26,7 +26,7 @@ class Scheduler:
             await self.fetchdiskq.put(request)
             logger.debug('add task<{}> ignore filter'.format(request.url))
         else:
-            if self._urlfilter.url_allowed(request.url, request.redirect):
+            if self._urlfilter.allowed(request):
                 await self.fetchdiskq.put(request)
 
     def next_nowait(self):

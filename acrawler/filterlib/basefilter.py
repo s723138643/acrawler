@@ -1,5 +1,6 @@
 import logging
 import urllib.parse as uparse
+from hashlib import sha1
 
 
 logger = logging.getLogger('Scheduler.Filter')
@@ -11,49 +12,62 @@ def get_deep(path):
 
 
 class BaseFilter:
-    hosts = None
+    allowed_hosts = set()
+    allowed_schemes = ['http', 'https']
 
     def __init__(self, settings):
         self.settings = settings
         self.hostonly = self.settings.get('hostonly')
         self.maxdeep = self.settings.get('maxdeep')
-        self.maxredirect = self.settings.get('maxredirect')
 
     @classmethod
     def set_hosts(cls, hosts):
-        cls.hosts = hosts
+        cls.allowed_hosts.update(hosts)
 
-    def url_allowed(self, url, redirect):
-        if not self.url_ok(url):
-            logger.debug('url:{} is not a valid URL'.format(url))
+    def allowed(self, request):
+        components = uparse.urlparse(request.url)
+
+        if not self.scheme_ok(components.scheme):
+            logger.debug('url:{} is not a valid URL'.format(request.url))
             return False
-
-        _, host, path, *x = uparse.urlparse(url)
-
-        if self.hostonly and not self.host_ok(host):
-            logger.debug('{} not in {}'.format(host, self.hosts))
-            return False
-        if self.maxredirect and 0 < self.maxredirect < redirect:
-            logger.debug('Maxredirect Error <{} [{}]>'.format(url, redirect))
+        if self.hostonly and not self.host_ok(components.netloc):
+            logger.debug('{} not in host lists'
+                         .format(components.countnetloc, self.hosts))
             return False
         if self.maxdeep and self.maxdeep > 0:
-            deep = get_deep(path)
+            deep = get_deep(components.path)
             if deep > self.maxdeep:
-                logger.debug(
-                        'Maxdeep Error <{} [{}]>'.format(url, self.maxdeep))
+                logger.debug('path:{} is too deep'.format(components.path))
                 return False
+        if self.url_seen(request.url):
+            return False
 
-        url = host + path + ''.join(x)
-        return not self.had_seen(url)
+        return True
 
-    def url_ok(self, url):
-        return url.startswith('https://') or url.startswith('http://')
+    def scheme_ok(self, scheme):
+        return scheme in self.allowed_schemes
 
     def host_ok(self, host):
-        return host in self.hosts
+        return host in self.allowed_hosts
 
-    def had_seen(self, url):
+    def url_seen(self, url):
         return False
+
+    def url_fingerprint(self, url):
+        durl = url.encode()
+        return sha1(durl).hexdigest()
+
+    def url_normalization(self, url):
+        components = uparse.urlparse(url)
+        ql = uparse.parse_qsl(components.query)
+        unique_query = uparse.urlencode(sorted(ql))    # make query unique
+        params = (components.scheme,
+                  components.netloc,
+                  components.path.rstrip('/'),
+                  components.params,
+                  unique_query,
+                  '')
+        return uparse.urlunparse(params)
 
     def close(self):
         pass
