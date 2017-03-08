@@ -5,7 +5,7 @@ DEFAULT_CONFIG = {
         # 设置默认class
         'EngineClass': 'acrawler.engine.Engine',
         'SchedulerClass': 'acrawler.scheduler.Scheduler',
-        'FilterClass': 'acrawler.filterlib.BlumeFilter',
+        'FilterClass': 'acrawler.filterlib.MemFilter',
         'QueueClass': 'acrawler.queuelib.PrioritySQLiteQueue',
         # 以下是各模块设置
         'spider': {
