@@ -103,6 +103,8 @@ class Engine:
                                                         'SIGINT'))
         try:
             self._loop.run_until_complete(asyncio.wait(self._tasks))
+        except Exception as e:
+            logger.error('error ocurred, {}'.format(e))
         finally:
             self._scheduler.close()
             self._loop.close()

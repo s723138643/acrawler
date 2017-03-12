@@ -55,7 +55,7 @@ class Request:
 
     @parser.setter
     def parser(self, value):
-        if callable(value):
+        if not callable(value):
             raise ValueError('{} is not callable'.format(value))
         self.parser_func = value.__name__
 
@@ -90,6 +90,10 @@ class Response:
 
     @property
     def text(self):
+        return self._raw
+
+    @property
+    def raw(self):
         return self._raw
 
     @property

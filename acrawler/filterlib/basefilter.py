@@ -28,11 +28,11 @@ class BaseFilter:
         components = uparse.urlparse(request.url)
 
         if not self.scheme_ok(components.scheme):
-            logger.debug('url:{} is not a valid URL'.format(request.url))
+            logger.debug('{} is not a valid URL'.format(request.url))
             return False
         if self.hostonly and not self.host_ok(components.netloc):
-            logger.debug('{} not in host lists'
-                         .format(components.countnetloc, self.hosts))
+            logger.debug('{} not in host lists {}'
+                         .format(components.netloc, self.allowed_hosts))
             return False
         if self.maxdeep and self.maxdeep > 0:
             deep = get_deep(components.path)

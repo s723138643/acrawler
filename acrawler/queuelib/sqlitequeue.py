@@ -140,7 +140,7 @@ class PrioritySQLiteQueue(BaseQueue):
 
         for child in task_dir.iterdir():
             if child.is_file():
-                m = re.match(self._basename+'_(?P<p>\d+)\.db', str(child))
+                m = re.search(self._basename+'_(?P<p>\d+)\.db', str(child))
                 if not m:
                     continue
                 priority = int(m.group('p'))
@@ -161,7 +161,7 @@ class PrioritySQLiteQueue(BaseQueue):
 
     def _put(self, item):
         priority = item.priority
-        if priority not in self._queues.keys():
+        if priority not in self._queues:
             queue = self._create_queue(priority, loop=self._loop)
         else:
             queue = self._queues.get(priority)

@@ -81,7 +81,10 @@ class BaseSpider(AbstractSpider):
         else:
             fetcher = getattr(self, request.fetcher)
         response = await fetcher(request)
-        if response and (not response.request):
+        if isinstance(response, Request):
+            await self.send_result(response)
+            return None
+        if isinstance(response, Response) and (not response.request):
             # to make sure raw request in result
             response.request = request
         return response
@@ -122,14 +125,18 @@ class BaseSpider(AbstractSpider):
                 response = await self._fetch(task)
                 if response:
                     await self._parse(response)
-                logger.info('<spider-{}> task<{}> done!'
+                logger.info('<spider-{}> process task<{}> complete'
                             .format(self._name, task.url))
             except Exception as e:
                 if self._debug:
+                    logger.exception(e)
                     self.stop_all()
-                logger.info('<spider-{}> task<{}> failed!'
-                            .format(self._name, task.url))
-                logger.exception(e)
+                else:
+                    logger.info('<spider-{}> process task<{}> failed'
+                                .format(self._name, task.url))
+                    logger.error('<spider-{}> an unexpected error ocurred'
+                                 .format(self._name))
+                    logger.exception(e)
                 continue
             finally:
                 # register spider to engine again
