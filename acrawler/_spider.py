@@ -65,6 +65,7 @@ class BaseSpider(AbstractSpider):
         self._settings = settings
         self._debug = settings['debug']
         self._engine = engine
+        self._watchdog = engine._watchdog
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._tasks = asyncio.Queue()
 
@@ -104,7 +105,7 @@ class BaseSpider(AbstractSpider):
         elif isinstance(response, Request):
             await self.send_result(response)
         else:
-            raise TypeError('cannot parse {} object'.format(type(response)))
+            raise TypeError('excepted {} object'.format(type(response)))
 
     async def run(self):
         if asyncio.iscoroutinefunction(self.initialize):
@@ -115,30 +116,29 @@ class BaseSpider(AbstractSpider):
         while True:
             task = await self._tasks.get()
             if isinstance(task, Stop):
-                logger.info('<spider-{}> quit, {}.'
-                            .format(self._name, task.msg))
+                logger.info('recieved stop message, stop now')
                 break
-
             try:
-                logger.info('<spider-{}> got task<{}>'
-                            .format(self._name, task.url))
+                self._watchdog.feed()       # to indecate spider is processing
+                logger.info('got <{}>'.format(task.url))
                 response = await self._fetch(task)
                 if response:
                     await self._parse(response)
-                logger.info('<spider-{}> process task<{}> complete'
-                            .format(self._name, task.url))
+            except asyncio.CancelledError:
+                logger.warn('spider was force stoped')
+                self.close()
+                raise
             except Exception as e:
                 if self._debug:
                     logger.exception(e)
                     self.stop_all()
                 else:
-                    logger.info('<spider-{}> process task<{}> failed'
-                                .format(self._name, task.url))
-                    logger.error('<spider-{}> an unexpected error ocurred'
-                                 .format(self._name))
+                    logger.info('processing <{}> failed'.format(task.url))
                     logger.exception(e)
                 continue
             finally:
+                # to indecate spider was processed
+                self._watchdog.consume()
                 # register spider to engine again
                 await self._engine.register(self)
         self.close()
