@@ -169,12 +169,13 @@ class Engine:
             cancel_all()
             raise
         else:
+            await self.broadcast(Stop())
             if self._engine and not self._engine.cancelled():
                 self._engine.cancel()
-            await self.broadcast(Stop())
 
     def quit(self):
         if self._interrupt <= 1:
             self._quit.set()
         elif self._interrupt >= 5:  # force cancel all coroutines
-            self._stop.cancel()
+            if (not self._stop.done()) and (not self._stop.cancelled()):
+                self._stop.cancel()
