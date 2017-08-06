@@ -1,9 +1,6 @@
 import json
 import time
 import logging
-import lxml.etree as etree
-
-from pyquery import PyQuery
 
 
 logger = logging.getLogger('spider')
@@ -76,8 +73,6 @@ class Response:
         self._status = status
         self._headers = headers
         self._json = None
-        self._xpath = None
-        self._css = None
         self.request = request
 
     @property
@@ -103,25 +98,3 @@ class Response:
         if not self._json:
             self._json = json.loads(self._raw)
         return self._json
-
-    @property
-    def HTML_parser(self):
-        if self._xpath is None:
-            self._xpath = etree.HTML(self._raw)
-        return self._xpath
-
-    @property
-    def CSS_parser(self):
-        if not self._css:
-            self._css = PyQuery(self._raw)
-        return self._css
-
-    def xpath(self, patern, *args, **kwargs):
-        if self._xpath is None:
-            self._xpath = etree.HTML(self._raw)
-        return self._xpath.xpath(patern, *args, **kwargs)
-
-    def css(self, patern, *args, **kwargs):
-        if not self._css:
-            self._css = PyQuery(self._raw)
-        return self._css(patern, *args, **kwargs)
