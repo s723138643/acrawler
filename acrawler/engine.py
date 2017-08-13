@@ -21,18 +21,11 @@ def get_hosts_from_urls(urls):
     return hosts
 
 
-class WathDog:
-    def __init__(self, maxsize):
-        self._bucket = asyncio.Queue(maxsize=maxsize)
-
-    def feed(self):
-        self._bucket.put_nowait(1)
-
-    def consume(self):
-        self._bucket.get_nowait()
-
-    def empty(self):
-        return self._bucket.empty()
+def exception_handler(loop, context):
+    if 'exception' in context:
+        logger.exception(context['exception'])
+    else:
+        logger.warn(context['message'])
 
 
 class Engine:
@@ -54,16 +47,17 @@ class Engine:
         self._tasks = []
 
         self._threads = self._settings['engine'].get('threads', '1')
-        self._watchdog = WathDog(self._threads)
-        self._engine = None
-        self._stop = None
-        self._quit = asyncio.Event(loop=self._loop)
+        self._engine_coro = None
+        self._stop_coro = None
+        self._quit_event = asyncio.Event(loop=self._loop)
         self._resume = resume
         self._interrupt = 0
+        self._unfinished = 0
 
         self._initial()
 
     def _initial(self):
+        self._loop.set_exception_handler(exception_handler)
         if not self._resume:
             self._QueueClass.clean(self._settings['scheduler']['queue'])
             self._FilterClass.clean(self._settings['scheduler']['filter'])
@@ -83,7 +77,7 @@ class Engine:
     def signalhandler(self, signame):
         logger.warning('got signal {}'.format(signame))
         self._interrupt += 1
-        self.quit()
+        self.stop()
 
     async def register(self, spider):
         await self._waiters.put(spider)
@@ -101,81 +95,85 @@ class Engine:
             return True
 
     def run(self):
+        loop = self._loop
         if self.need_boost():
             requests = self._SpiderClass.start_request()
-            self._loop.run_until_complete(self.send_result(requests))
+            loop.run_until_complete(self.send_result(requests))
+        self._stop_coro = loop.create_task(self.wait_stop())
+        self._tasks.append(self._stop_coro)
+        self._engine_coro = loop.create_task(self.engine())
+        self._tasks.append(self._engine_coro)
         for i in range(self._threads):
-            spider = self._SpiderClass(self,
-                                       self._settings['spider'],
-                                       self._loop)
+            spider = self._SpiderClass(
+                self, self._settings['spider'], loop
+                )
             self._spiders.append(spider)
-            self._tasks.append(asyncio.ensure_future(spider.run()))
-        self._engine = asyncio.ensure_future(self.engine())
-        self._tasks.append(self._engine)
-        self._stop = asyncio.ensure_future(self.wait_stop())
-        self._tasks.append(self._stop)
-        # add signal handler
-        self._loop.add_signal_handler(
+            self.register(spider)
+            self._tasks.append(loop.create_task(spider.run()))
+       # add signal handler
+        loop.add_signal_handler(
             getattr(signal, 'SIGINT'),
             functools.partial(self.signalhandler, 'SIGINT')
         )
         try:
-            self._loop.run_until_complete(asyncio.wait(self._tasks))
+            loop.run_until_complete(asyncio.wait(self._tasks))
         except Exception as e:
             logger.error('unexpected error ocurred, {}'.format(e))
+            return
         finally:
+            self.cancel_all()
             self._scheduler.close()
-            self._loop.close()
+            loop.close()
 
     async def send_result(self, result):
         if not result:
             logger.debug('add None value to Scheduler')
+            return
         else:
-            if not hasattr(result, '__iter__'):
-                result = (result, )
-            for r in result:
-                await self._scheduler.add(r)
-
+            if hasattr(result, '__iter__'):
+                for r in result:
+                    await self._scheduler.add(r)
+            else:
+                await self._scheduler.add(result)
+    
     async def engine(self):
         while True:
-            waiter = await self._waiters.get()
             try:
+                waiter = await self._waiters.get()
                 task = await self._scheduler.next(timeout=1)
+                await waiter.send(task)
+                self._unfinished += 1
             except QueueEmpty:
-                if self._watchdog.empty():
+                if self._unfinished <= 0 and self._scheduler.empty():
                     logger.info('all tasks had done')
-                    self.quit()
+                    self.stop()
                     break   # tasks is done, break from loop
                 else:
                     await self._waiters.put(waiter)
                     continue
             except asyncio.CancelledError:
-                raise
-            else:
-                await waiter.send(task)
+                break
+    
+    def task_done(self, spider):
+        self.register(spider)
+        self._unfinished -= 1
 
     async def wait_stop(self):
-        def cancel_all():
-            if self._engine and not self._engine.cancelled():
-                self._engine.cancel()
-            for spider in self._spiders:
-                if not spider.cancelled():
-                    spider.cancel()
+        await self._quit_event.wait()
+        await self.broadcast(Stop())
+        if self._engine_coro:
+            engine = self._engine_coro
+            if not (engine.done() and engine.cancelled()):
+                engine.cancel()
 
-        try:
-            await self._quit.wait()
-        except asyncio.CancelledError:
-            logger.warn('force stop message recieved, shutdown now')
-            cancel_all()
-            raise
-        else:
-            await self.broadcast(Stop())
-            if self._engine and not self._engine.cancelled():
-                self._engine.cancel()
+    def cancel_all(self):
+        for task in self._tasks:
+            if task.done() or task.cancelled():
+                continue
+            task.cancel()
 
-    def quit(self):
+    def stop(self):
         if self._interrupt <= 1:
-            self._quit.set()
+            self._quit_event.set()
         elif self._interrupt >= 5:  # force cancel all coroutines
-            if (not self._stop.done()) and (not self._stop.cancelled()):
-                self._stop.cancel()
+            self.cancel_all()

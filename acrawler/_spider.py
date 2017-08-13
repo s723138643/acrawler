@@ -10,6 +10,11 @@ from .model import Request, Response, Stop
 logger = logging.getLogger('Spider')
 
 
+class LogAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return "{} {}".format(self.extra['name'], msg), kwargs
+
+
 class AbstractSpider:
     """abstract class of spider"""
     start_urls = []
@@ -18,14 +23,13 @@ class AbstractSpider:
     def __init__(self, engine, settings, loop=None):
         raise NotImplementedError
 
+    def initialize(self):
+        pass
+
     @classmethod
     def start_request(cls):
         '''bootstrap spider, called by engine'''
         raise NotImplementedError
-
-    def initialize(self):
-        '''initialize spider, may overwrite by user'''
-        pass
 
     async def run(self):
         """run spider"""
@@ -61,20 +65,25 @@ class AbstractSpider:
 
 
 class BaseSpider(AbstractSpider):
+    count = 0
     def __init__(self, engine, settings, loop=None):
+        self._loop = asyncio.get_event_loop() if not loop else loop
         self._settings = settings
         self._debug = settings['debug']
         self._engine = engine
-        self._watchdog = engine._watchdog
-        self._loop = asyncio.get_event_loop() if not loop else loop
         self._tasks = asyncio.Queue()
+        BaseSpider.count += 1
+        self._name = 'spider'+str(self.count)
+        self.log = LogAdapter(logger, {'name': self._name})
 
     @classmethod
     def start_request(cls):
         '''bootstrap spider, may called by engine
         '''
         for url in cls.start_urls:
-            yield Request(url)
+            req = Request(url)
+            req.filter_ignore = True
+            yield req
 
     async def _fetch(self, request):
         if not request.fetcher:
@@ -109,52 +118,51 @@ class BaseSpider(AbstractSpider):
 
     async def run(self):
         if asyncio.iscoroutinefunction(self.initialize):
-            await self.intialize()
+            await self.initialize()
         else:
             self.initialize()
-        await self._engine.register(self)   # register spider to engine first
         while True:
             task = await self._tasks.get()
             if isinstance(task, Stop):
-                logger.info('recieved stop message, stop now')
+                self.log.info('recieved stop message, stop now')
                 break
             try:
-                self._watchdog.feed()       # to indecate spider is processing
-                logger.info('got <{}>'.format(task.url))
                 response = await self._fetch(task)
-                if response:
-                    await self._parse(response)
+                if not response:
+                    continue
+                await self._parse(response)
+                self.log.info('task <{}> done'.format(task.url))
             except asyncio.CancelledError:
-                logger.warn('spider was force stoped')
-                self.close()
-                raise
+                self.log.warn('force stoped')
+                task.filter_ignore = True
+                await self.send_result(task)
+                break
             except Exception as e:
+                task.filter_ignore = True
+                await self.send_result(task)
+                self.log.error('task <{}> failed'.format(task.url))
+                self.log.exception(e)
                 if self._debug:
-                    logger.exception(e)
                     self.stop_all()
-                else:
-                    logger.info('processing <{}> failed'.format(task.url))
-                    logger.exception(e)
                 continue
             finally:
                 # to indecate spider was processed
-                self._watchdog.consume()
-                # register spider to engine again
-                await self._engine.register(self)
+                self._engine.task_done(self)
         self.close()
 
     async def send_result(self, results):
         # send result to engine
-        if not hasattr(results, '__iter__'):
-            results = (results, )
-
         def request_filter(before):
             for result in before:
                 if result and isinstance(result, Request):
                     yield result
                 else:
-                    logger.warn('excepted a Request object')
-        await self._engine.send_result(request_filter(results))
+                    self.log.warn('excepted a Request object')
+
+        if not hasattr(results, '__iter__'):
+            results = (results, )
+        filted = request_filter(results)
+        await self._engine.send_result(filted)
 
     async def send(self, task):
         '''send task to spider, used by engine
@@ -166,4 +174,4 @@ class BaseSpider(AbstractSpider):
 
     def stop_all(self):
         '''stop all spiders, may not stop immediately'''
-        self._engine.quit()
+        self._engine.stop()

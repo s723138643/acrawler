@@ -55,14 +55,14 @@ class BaseQueue:
 
     def get_nowait(self):
         if self.empty():
-            raise Empty
+            raise Empty()
         item = self._get()
         self._wakeup_next(self._putters)
         return item
 
     def put_nowait(self, items):
         if self.full():
-            raise Full
+            raise Full()
         self._put(items)
         self._wakeup_next(self._getters)
 

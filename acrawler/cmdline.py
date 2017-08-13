@@ -38,16 +38,21 @@ def get_args():
     return parser.parse_args()
 
 
-def split_moduler(moduler):
-    assert type(moduler) is str, 'moduler is not a str'
-    x = moduler.split('.')
-    m = '.'.join(x[:-1])
-    return m, x[-1]
+def load_obj(path):
+    assert isinstance(path, str), ValueError('excepted a str object')
+    try:
+        dot = path.rindex('.')
+    except IndexError:
+        raise ValueError('"load_obj" excepted a full path')
+    module_str, cls_str = path[:dot], path[dot+1:]
+    module = importlib.import_module(module_str)
+    return getattr(module, cls_str)
 
 
 def set_logging(level, logfile=None):
     confdict = {
-        'format': '%(levelname)s-%(name)s-%(funcName)s: %(message)s',
+        'format': '[%(asctime)s] %(name)s-%(levelname)s:: %(message)s',
+        'datefmt': '%Y-%m-%d %H:%M:%S',
         'level': level
     }
     if logfile:
@@ -61,8 +66,10 @@ def set_logging(level, logfile=None):
     logging.getLogger('Spider').setLevel(level)
 
     if level == logging.DEBUG:
-        logging.warn('debug mode enabled,'
-                     'when error occured spider will stop immediately')
+        logging.warn(
+            'debug mode enabled, when error occured spider'
+            ' will stop immediately'
+            )
 
 
 def execute(SpiderClass, *, SchedulerClass=None,
@@ -87,22 +94,13 @@ def execute(SpiderClass, *, SchedulerClass=None,
 
     # import modules
     if SchedulerClass is None:
-        moduler, name = split_moduler(settings['SchedulerClass'])
-        m = importlib.import_module(moduler)
-        SchedulerClass = getattr(m, name)
+        SchedulerClass = load_obj(settings['SchedulerClass'])
     if QueueClass is None:
-        moduler, name = split_moduler(settings['QueueClass'])
-        m = importlib.import_module(moduler)
-        QueueClass = getattr(m, name)
+        QueueClass = load_obj(settings['QueueClass'])
     if FilterClass is None:
-        moduler, name = split_moduler(settings['FilterClass'])
-        m = importlib.import_module(moduler)
-        FilterClass = getattr(m, name)
+        FilterClass = load_obj(settings['FilterClass'])
     if EngineClass is None:
-        moduler, name = split_moduler(settings['EngineClass'])
-        m = importlib.import_module(moduler)
-        EngineClass = getattr(m, name)
-    del m       # release tmple module m
+        EngineClass = load_obj(settings['EngineClass'])
 
     if args.threads and args.threads > 0:
         settings['engine']['threads'] = args.threads

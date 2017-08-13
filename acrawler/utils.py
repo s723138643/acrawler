@@ -189,20 +189,17 @@ def decoder(raw):
     raise last_e
 
 
-@singleton
 class UserAgent:
     '''general user_agent'''
 
     def __init__(self):
-        self._current = 0
         self._total = len(USER_AGENTS_PC)
+        self._current = random.randrange(0, self._total)
 
     def next(self):
         u = USER_AGENTS_PC[self._current]
-
         self._current += 1
         self._current = 0 if self._current >= self._total else self._current
-
         return u
 
     def random(self):

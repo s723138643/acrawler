@@ -1,5 +1,6 @@
 import json
 import time
+import datetime
 import logging
 
 
@@ -73,15 +74,12 @@ class Response:
         self._status = status
         self._headers = headers
         self._json = None
+        self.date = datetime.datetime.now()
         self.request = request
 
     @property
     def url(self):
         return self.request.url
-
-    @property
-    def response_header(self):
-        return self._headers
 
     @property
     def text(self):
@@ -90,11 +88,3 @@ class Response:
     @property
     def raw(self):
         return self._raw
-
-    @property
-    def json(self):
-        '''decode raw result as json
-        '''
-        if not self._json:
-            self._json = json.loads(self._raw)
-        return self._json
