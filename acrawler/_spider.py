@@ -117,10 +117,12 @@ class BaseSpider(AbstractSpider):
             raise TypeError('excepted {} object'.format(type(response)))
 
     async def run(self):
+        # initialize spider
         if asyncio.iscoroutinefunction(self.initialize):
             await self.initialize()
         else:
             self.initialize()
+        # start crawlling
         while True:
             task = await self._tasks.get()
             if isinstance(task, Stop):
