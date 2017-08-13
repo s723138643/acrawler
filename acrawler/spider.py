@@ -9,7 +9,7 @@ class Spider(BaseSpider):
         self._closed = False
         self._session = aiohttp.ClientSession(loop=self._loop)
 
-    async def fetch(self, request):
+    async def fetch(self, request, **kwargs):
         async with self._session.get(request.url, **kwargs) as response:
             text = await response.text()
             status = response.status
