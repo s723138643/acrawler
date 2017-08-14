@@ -161,14 +161,12 @@ class Engine:
     async def wait_stop(self):
         await self._quit_event.wait()
         await self.broadcast(Stop())
-        if self._engine_coro:
-            engine = self._engine_coro
-            if not (engine.done() and engine.cancelled()):
-                engine.cancel()
+        if self._engine_coro and not self._engine_coro.done():
+            self._engine_coro.cancel()
 
     def cancel_all(self):
         for task in self._tasks:
-            if task.done() or task.cancelled():
+            if task.done():
                 continue
             task.cancel()
 
