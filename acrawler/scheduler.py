@@ -39,12 +39,11 @@ class Scheduler:
     async def next(self, timeout=None):
         if timeout and timeout > 0:
             try:
-                t = await asyncio.wait_for(self.fetchdiskq.get(), timeout)
+                return (await asyncio.wait_for(self.fetchdiskq.get(), timeout))
             except asyncio.TimeoutError:
-                raise QueueEmpty()
-        else:
-            t = await self.fetchdiskq.get()
-        return t
+                if self.fetchdiskq.empty():
+                    raise QueueEmpty()
+        return (await self.fetchdiskq.get())
 
     def empty(self):
         return self.fetchdiskq.empty()

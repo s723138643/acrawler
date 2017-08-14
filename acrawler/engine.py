@@ -79,8 +79,8 @@ class Engine:
         self._interrupt += 1
         self.stop()
 
-    async def register(self, spider):
-        await self._waiters.put(spider)
+    def register(self, spider):
+        self._waiters.put_nowait(spider)
 
     async def broadcast(self, msg):
         for worker in self._spiders:
@@ -135,7 +135,7 @@ class Engine:
                     await self._scheduler.add(r)
             else:
                 await self._scheduler.add(result)
-    
+
     async def engine(self):
         while True:
             try:
@@ -144,16 +144,16 @@ class Engine:
                 await waiter.send(task)
                 self._unfinished += 1
             except QueueEmpty:
-                if self._unfinished <= 0 and self._scheduler.empty():
+                if self._unfinished <= 0:
                     logger.info('all tasks had done')
                     self.stop()
                     break   # tasks is done, break from loop
                 else:
-                    await self._waiters.put(waiter)
+                    self.register(waiter)
                     continue
             except asyncio.CancelledError:
                 break
-    
+
     def task_done(self, spider):
         self.register(spider)
         self._unfinished -= 1

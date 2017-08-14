@@ -202,7 +202,8 @@ class UserAgent:
         self._current = 0 if self._current >= self._total else self._current
         return u
 
-    def random(self):
+    @staticmethod
+    def random():
         return random.choice(USER_AGENTS_PC)
 
 
