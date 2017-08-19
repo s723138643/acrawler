@@ -5,8 +5,8 @@ DEFAULT_CONFIG = {
         # 设置默认class
         'EngineClass': 'acrawler.engine.Engine',
         'SchedulerClass': 'acrawler.scheduler.Scheduler',
-        'FilterClass': 'acrawler.filterlib.MemFilter',
-        'QueueClass': 'acrawler.queuelib.PrioritySQLiteQueue',
+        'FilterClass': 'acrawler.filterlib.memfilter.MemFilter',
+        'QueueClass': 'acrawler.queuelib.mqueue.PriorityQueue',
         # 以下是各模块设置
         'spider': {
             'headers': {
@@ -21,29 +21,12 @@ DEFAULT_CONFIG = {
             'threads': 1
             },
         'scheduler': {
-            'queue':{
-                'sqlite_path': './task',
-                'sqlite_dbname': 'task_priority',
-                'mysql_config': {
-                        'host': '127.0.0.1',
-                        'user': 'rigel',
-                        'password': 'F=ma',
-                        'db': 'queue'
-                    },
-                "mysql_tablename": 'task_priority',
-                'mongo_config': {
-                    'host': '127.0.0.1'
-                    },
-                'mongo_dbname': 'queue',
-                'mongo_collectionname': 'task_priority'
-                },
+            'queue':{},
             'filter': {
                 'hostonly': True,
                 'maxredirect': None,        # 默认不设置最大跳转数
                 'maxdeep': None,            # 默认不设置最大爬取深度
-                'db_path': './filter',
-                'blumedb': 'blume.db',
-                'sqlitedb': 'sqlite.db'
+                'db_path': './filter'
                 }
             }
         }

@@ -1,7 +1,7 @@
 import logging
 import pathlib
 
-import pyblume
+import pybloom
 
 from .basefilter import BaseFilter
 
@@ -10,19 +10,18 @@ logger = logging.getLogger('Scheduler.Filter')
 
 class BlumeFilter(BaseFilter):
     def __init__(self, settings):
-        super().__init__(settings)
         self._blumeclosed = False
+        super().__init__(settings)
         path = settings.get('db_path')
         self._path = pathlib.Path(path)
         if not self._path.exists():
             self._path.mkdir()
         blumefile = settings.get('blumedb')
-        self._blumedb = self._path / blumefile
+        self._blumedb = str(self._path / blumefile)
         if self._blumedb.is_file():
-            self._blumefilter = pyblume.open(str(self._blumedb), for_write=1)
+            self._blumefilter = pybloom.from_file(self._blumedb)
         else:
-            self._blumefilter = pyblume.Filter(
-                    1024*1024*10, 0.000001, str(self._blumedb))
+            self._blumefilter = pybloom.Filter(1024*1024*10, 0.0001, self._blumedb)
 
     def url_seen(self, url):
         unique_url = self.url_normalization(url)
@@ -40,9 +39,9 @@ class BlumeFilter(BaseFilter):
             blumedb.unlink()
 
     def close(self):
+        self._blumeclosed = True
         super().close()
         self._blumefilter.close()
-        self._blumeclosed = True
 
     def __del__(self):
         if not self._blumeclosed:

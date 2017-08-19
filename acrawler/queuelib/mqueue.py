@@ -24,7 +24,7 @@ class PriorityQueue(BaseQueue):
     def _get(self):
         for priority in sorted(self._prioritys.keys()):
             queue = self._prioritys[priority]
-            if not queue.empty():
+            if queue:
                 self._total -= 1
                 return queue.popleft()
         raise Empty
