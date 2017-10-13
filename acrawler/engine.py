@@ -110,7 +110,7 @@ class Engine:
             self._spiders.append(spider)
             self.register(spider)
             self._tasks.append(loop.create_task(spider.run()))
-       # add signal handler
+        # add signal handler
         loop.add_signal_handler(
             getattr(signal, 'SIGINT'),
             functools.partial(self.signalhandler, 'SIGINT')

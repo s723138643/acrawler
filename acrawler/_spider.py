@@ -15,66 +15,23 @@ class LogAdapter(logging.LoggerAdapter):
         return "{} {}".format(self.extra['name'], msg), kwargs
 
 
-class AbstractSpider:
-    """abstract class of spider"""
+class BaseSpider:
     start_urls = []
     allowed_hosts = set()
+    spider_count = 0
 
-    def __init__(self, engine, settings, loop=None):
-        raise NotImplementedError
-
-    def initialize(self):
-        pass
-
-    @classmethod
-    def start_request(cls):
-        '''bootstrap spider, called by engine'''
-        raise NotImplementedError
-
-    async def run(self):
-        """run spider"""
-        raise NotImplementedError
-
-    async def send(self, task):
-        """send message to this spider"""
-        raise NotImplementedError
-
-    async def stop(self):
-        """send stop message to this spider"""
-        raise NotImplementedError
-
-    async def fetch(self, request):
-        """fetch document from website specified by request"""
-        raise NotImplementedError
-
-    def parse(self, response):
-        """parse document"""
-        raise NotImplementedError
-
-    async def broadcast(self, msg):
-        """broadcast msg to all spider(include itself)"""
-        pass
-
-    def stop_all(self):
-        """stop all spiders"""
-        pass
-
-    def close(self):
-        '''do nothing by default'''
-        pass
-
-
-class BaseSpider(AbstractSpider):
-    count = 0
     def __init__(self, engine, settings, loop=None):
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._settings = settings
         self._debug = settings['debug']
         self._engine = engine
         self._tasks = asyncio.Queue()
-        BaseSpider.count += 1
-        self._name = 'spider'+str(self.count)
+        BaseSpider.spider_count += 1
+        self._name = 'spider-{}'.format(self.spider_count)
         self.log = LogAdapter(logger, {'name': self._name})
+
+    def initialize(self):
+        pass
 
     @classmethod
     def start_request(cls):
@@ -177,3 +134,6 @@ class BaseSpider(AbstractSpider):
     def stop_all(self):
         '''stop all spiders, may not stop immediately'''
         self._engine.stop()
+
+    def close(self):
+        pass
