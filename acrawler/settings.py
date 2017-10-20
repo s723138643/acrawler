@@ -6,7 +6,7 @@ DEFAULT_CONFIG = {
         'EngineClass': 'acrawler.engine.Engine',
         'SchedulerClass': 'acrawler.scheduler.Scheduler',
         'FilterClass': 'acrawler.filterlib.memfilter.MemFilter',
-        'QueueClass': 'acrawler.queuelib.mqueue.PriorityQueue',
+        'QueueClass': 'acrawler.queuelib.sqlitequeue.PrioritySQLiteQueue',
         # 以下是各模块设置
         'spider': {
             'headers': {
@@ -21,7 +21,9 @@ DEFAULT_CONFIG = {
             'threads': 1
             },
         'scheduler': {
-            'queue':{},
+            'queue':{
+                'sqlite_path': './task'
+            },
             'filter': {
                 'hostonly': True,
                 'maxredirect': None,        # 默认不设置最大跳转数

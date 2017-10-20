@@ -21,13 +21,13 @@ class BaseQueue:
         self._putters = deque()
         self._getters = deque()
 
-    def _get(self):
+    def _get(self, count=1):
         raise NotImplementedError
 
-    def _put(self, items):
+    def _put(self, item):
         raise NotImplementedError
 
-    async def get(self):
+    async def get(self, count=1):
         while self.empty():
             getter = self._loop.create_future()
             self._getters.append(getter)
@@ -38,9 +38,9 @@ class BaseQueue:
                 if not self.empty() and not getter.cancelled():
                     self._wakeup_next(self._getters)
                 raise
-        return self.get_nowait()
+        return self.get_nowait(count=count)
 
-    async def put(self, items):
+    async def put(self, item):
         while self.full():
             putter = self._loop.create_future()
             self._putters.append(putter)
@@ -51,19 +51,19 @@ class BaseQueue:
                 if not self.full() and not putter.cancelled():
                     self._wakeup_next(self._putters)
                 raise
-        return self.put_nowait(items)
+        return self.put_nowait(item)
 
-    def get_nowait(self):
+    def get_nowait(self, count=1):
         if self.empty():
             raise Empty()
-        item = self._get()
+        items = self._get(count=count)
         self._wakeup_next(self._putters)
-        return item
+        return items
 
-    def put_nowait(self, items):
+    def put_nowait(self, item):
         if self.full():
             raise Full()
-        self._put(items)
+        self._put(item)
         self._wakeup_next(self._getters)
 
     def _wakeup_next(self, waiters):
@@ -93,6 +93,7 @@ class BaseQueue:
 
 def serialze(item):
     return pickle.dumps(item)
+
 
 def unserialze(raw_data):
     return pickle.loads(raw_data)

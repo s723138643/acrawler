@@ -21,12 +21,12 @@ class PriorityQueue(BaseQueue):
         queue.append(item)
         self._total += 1
 
-    def _get(self):
+    def _get(self, count=1):
         for priority in sorted(self._prioritys.keys()):
             queue = self._prioritys[priority]
             if queue:
                 self._total -= 1
-                return queue.popleft()
+                return [queue.popleft()]
         raise Empty
 
     def close(self):

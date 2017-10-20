@@ -24,7 +24,7 @@ _sql_push = ('INSERT INTO queue '
              '(url, priority, created,'
              ' last_activated, retryed, serialzed) '
              'VALUES (?,?,?,?,?,?)')
-_sql_pop = 'SELECT id,serialzed FROM queue ORDER BY id LIMIT 1'
+_sql_pop = 'SELECT id,serialzed FROM queue ORDER BY id LIMIT ?'
 _sql_del = 'DELETE FROM queue WHERE id = ?'
 
 
@@ -42,6 +42,9 @@ class FifoSQLiteQueue(BaseQueue):
 
         self._db = sqlite3.Connection(str(self._dbfile), timeout=60)
         self._db.row_factory = sqlite3.Row
+        self._create_table()
+
+    def _create_table(self):
         cursor = self._db.cursor()
         try:
             cursor.execute(_sql_create)
@@ -62,22 +65,24 @@ class FifoSQLiteQueue(BaseQueue):
         finally:
             cursor.close()
 
-    def _get(self):
-        while True:
-            cursor = self._db.cursor()
-            try:
-                row = cursor.execute(_sql_pop).fetchone()
-                if not row:
-                    raise Empty
-                cursor.execute(_sql_del, (row['id'],))
+    def _get(self, count=1):
+        items = []
+        cursor = self._db.cursor()
+        try:
+            rows = cursor.execute(_sql_pop, (count,)).fetchall()
+            if not rows:
+                raise Empty()
+            for row in rows:
                 try:
                     unserialzed = unserialze(row['serialzed'])
+                    cursor.execute(_sql_del, (row['id'],))
                 except Exception as e:
-                    logger.error('Unserialzed Error, {}'.format(e))
-                else:
-                    return unserialzed
-            finally:
-                cursor.close()
+                    logger.error(e)
+                    continue
+                items.append(unserialzed)
+        finally:
+            cursor.close()
+        return items
 
     @property
     def maxsize(self):
@@ -167,15 +172,23 @@ class PrioritySQLiteQueue(BaseQueue):
             queue = self._queues.get(priority)
         queue.put_nowait(item)
 
-    def _get(self):
+    def _get(self, count=1):
+        results = []
+        remain = count
         for priority, queue in sorted(self._queues.items()):
             try:
-                return queue.get_nowait()
+                items = queue.get_nowait(remain)
             except Empty:
                 queue.close()
                 del self._queues[priority]
                 continue
-        raise Empty
+            results.extend(items)
+            remain -= len(items)
+            if remain <= 0:
+                return results
+        if not results:
+            raise Empty()
+        return results
 
     @property
     def _size(self):

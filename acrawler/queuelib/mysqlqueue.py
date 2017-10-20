@@ -26,7 +26,7 @@ class PriorityMysqlQueue(BaseQueue):
                '(url, priority, created, last_activated,'
                ' retryed, serialzed) '
                'VALUES (%s, %s, %s, %s, %s, %s)')
-    _pop = 'SELECT * FROM {} ORDER BY id LIMIT 1'
+    _pop = 'SELECT * FROM {} ORDER BY id LIMIT %s'
     _del = 'DELETE FROM {} WHERE id=%s'
     _qsize = 'SELECT COUNT(*) FROM {}'
 
@@ -93,32 +93,40 @@ class PriorityMysqlQueue(BaseQueue):
         finally:
             cur.close()
 
-    def _get(self):
+    def _get(self, count=1):
+        assert count >= 1
+        remain = count
+        items = []
         for priority in sorted(self._priorities):
             query = self._pop.format(self._make_table_name(priority))
             cur = self._db.cursor()
             try:
-                cur.execute(query)
-                result = cur.fetchone()
+                cur.execute(query, (remain,))
+                result = cur.fetchall()
                 if not result:
                     continue
             finally:
                 cur.close()
             query = self._del.format(self._make_table_name(priority))
             cur = self._db.cursor()
-            try:
-                cur.execute(query, (result[0],))
-                self._total -= 1
-            finally:
-                cur.close()
-
-            try:
-                unserialzed = unserialze(result[6])
-            except Exception as e:
-                logger.error('Unserialz Error, {}'.format(e))
-            else:
-                return unserialzed
-        raise Empty
+            temp = []
+            for item in result:
+                try:
+                    unserialzed = unserialze(item[6])
+                    cur.execute(query, (item[0],))
+                    self._total -= 1
+                except Exception as e:
+                    logger.error(e)
+                    continue
+                temp.append(unserialzed)
+            cur.close()
+            items.extend(temp)
+            remain -= len(temp)
+            if remain <= 0:
+                return items
+        if not items:
+            raise Empty()
+        return items
 
     @staticmethod
     def clean(settings):

@@ -32,7 +32,7 @@ class Request:
 
         if fetcher and not callable(fetcher):
             raise ValueError('fetcher_func is not callable')
-        # async function cannot be serialzed
+        # coroutine cannot be serialzed
         self.fetcher_func = fetcher.__name__ if fetcher else None
         if parser and not callable(parser):
             raise ValueError('parser_func is not callable')

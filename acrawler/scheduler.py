@@ -1,10 +1,12 @@
 import logging
 import asyncio
 
+from collections import deque
 from .queuelib import Empty
 
 
 logger = logging.getLogger('Scheduler')
+dozen = 10
 
 
 class QueueEmpty(Exception):
@@ -17,6 +19,7 @@ class Scheduler:
         self._urlfilter = FilterClass(settings['filter'])
         self.fetchdiskq = QueueClass(settings['queue'], loop=loop)
         self._settings = settings
+        self._caches = deque()
 
     async def add(self, request):
         await self._add_request(request)
@@ -30,22 +33,34 @@ class Scheduler:
                 await self.fetchdiskq.put(request)
 
     def next_nowait(self):
-        try:
-            req = self.fetchdiskq.get_nowait()
-        except Empty:
-            raise QueueEmpty()
-        return req
+        if not self._caches:
+            try:
+                tasks = self.fetchdiskq.get_nowait(dozen)
+            except Empty:
+                raise QueueEmpty()
+            self._caches.extend(tasks)
+        return self._caches.popleft()
 
     async def next(self, timeout=None):
-        if timeout and timeout > 0:
-            try:
-                return (await asyncio.wait_for(self.fetchdiskq.get(), timeout))
-            except asyncio.TimeoutError:
-                if self.fetchdiskq.empty():
-                    raise QueueEmpty()
-        return (await self.fetchdiskq.get())
+        if not self._caches:
+            if timeout and timeout > 0:
+                for i in range(3):  # retry 3 times if queue is not empty
+                    coroutin = self.fetchdiskq.get(dozen)
+                    try:
+                        tasks = await asyncio.wait_for(coroutin, timeout)
+                    except asyncio.TimeoutError:
+                        if self.fetchdiskq.empty():
+                            raise QueueEmpty()
+                        continue
+                    break
+                else:
+                    raise Exception('got task stalled, but queue is not empty')
+            else:
+                tasks = await self.fetchdiskq.get(dozen)
+            self._caches.extend(tasks)
+        return self._caches.popleft()
 
-    def empty(self):
+    def is_done(self):
         return self.fetchdiskq.empty()
 
     def close(self):

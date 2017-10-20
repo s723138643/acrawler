@@ -43,7 +43,7 @@ class PriorityMongoQueue(BaseQueue):
         col = self._db.get_collection(self._get_collection(item.priority))
         col.insert_one(data)
 
-    def _get(self):
+    def _get(self, count=1):
         for priority in sorted(self._priorities):
             col = self._db.get_collection(self._get_collection(priority))
             result = col.find_one_and_delete({}, {'_id': 0})
@@ -53,8 +53,8 @@ class PriorityMongoQueue(BaseQueue):
                 except Exception as e:
                     logger.error('Unserialze Error, {}'.format(e))
                 else:
-                    return unserialzed
-        raise Empty
+                    return [unserialzed]
+        raise Empty()
 
     @staticmethod
     def clean(settings):
