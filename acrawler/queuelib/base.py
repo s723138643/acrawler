@@ -1,30 +1,19 @@
 import asyncio
 import pickle
 import logging
-
+from asyncio import QueueEmpty
 from collections import deque
 
 
-class Empty(Exception):
-    pass
-
-
-class Full(Exception):
-    pass
-
-
 class BaseQueue:
-
-    def __init__(self, maxsize=0, loop=None):
+    def __init__(self, loop=None):
         self._loop = asyncio.get_event_loop() if not loop else loop
-        self._maxsize = maxsize
-        self._putters = deque()
         self._getters = deque()
 
     def _get(self, count=1):
         raise NotImplementedError
 
-    def _put(self, item):
+    def _put(self, items):
         raise NotImplementedError
 
     async def get(self, count=1):
@@ -40,45 +29,26 @@ class BaseQueue:
                 raise
         return self.get_nowait(count=count)
 
-    async def put(self, item):
-        while self.full():
-            putter = self._loop.create_future()
-            self._putters.append(putter)
-            try:
-                await putter
-            except:
-                putter.cancel()
-                if not self.full() and not putter.cancelled():
-                    self._wakeup_next(self._putters)
-                raise
-        return self.put_nowait(item)
-
     def get_nowait(self, count=1):
         if self.empty():
-            raise Empty()
-        items = self._get(count=count)
-        self._wakeup_next(self._putters)
-        return items
+            raise QueueEmpty()
+        return self._get(count=count)
 
-    def put_nowait(self, item):
-        if self.full():
-            raise Full()
-        self._put(item)
-        self._wakeup_next(self._getters)
+    def put(self, items):
+        if not hasattr(items, '__iter__'):
+            items = (items, )
+        if self._put(items) > 0:
+            self._wakeup_next(self._getters)
 
     def _wakeup_next(self, waiters):
-        if waiters:
+        while waiters:
             waiter = waiters.popleft()
             if not waiter.done():
                 waiter.set_result(None)
+                return
 
     def empty(self):
         return self.qsize() <= 0
-
-    def full(self):
-        if self._maxsize <= 0:
-            return False
-        return self.qsize() >= self._maxsize
 
     def qsize(self):
         raise NotImplementedError

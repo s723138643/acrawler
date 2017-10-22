@@ -82,17 +82,16 @@ class Engine:
     def register(self, spider):
         self._waiters.put_nowait(spider)
 
-    async def broadcast(self, msg):
+    def broadcast(self, msg):
         for worker in self._spiders:
-            await worker.send(msg)
+            worker.send(msg)
 
     def need_boost(self):
         f = pathlib.Path(self._first_start_file)
         if f.is_file():
             return False
-        else:
-            f.touch()
-            return True
+        f.touch()
+        return True
 
     def run(self):
         loop = self._loop
@@ -125,34 +124,24 @@ class Engine:
             self._scheduler.close()
             loop.close()
 
-    async def send_result(self, result):
-        if not result:
-            logger.debug('add None value to Scheduler')
-            return
-        else:
-            if hasattr(result, '__iter__'):
-                for r in result:
-                    await self._scheduler.add(r)
-            else:
-                await self._scheduler.add(result)
+    def send_result(self, results):
+        assert hasattr(results, '__iter__')
+        self._scheduler.add(results)
 
     async def engine(self):
         while True:
+            waiter = await self._waiters.get()
             try:
-                waiter = await self._waiters.get()
                 task = await self._scheduler.next(timeout=1)
-                await waiter.send(task)
-                self._unfinished += 1
-            except QueueEmpty:
-                if self._unfinished <= 0:
+            except asyncio.TimeoutError:
+                if self._unfinished <= 0 and self._scheduler.is_empty():
                     logger.info('all tasks had done')
                     self.stop()
                     break   # tasks is done, break from loop
-                else:
-                    self.register(waiter)
-                    continue
-            except asyncio.CancelledError:
-                break
+                self.register(waiter)
+                continue
+            waiter.send(task)
+            self._unfinished += 1
 
     def task_done(self, spider):
         self.register(spider)

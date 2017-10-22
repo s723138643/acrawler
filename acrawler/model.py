@@ -67,6 +67,9 @@ class Request:
             raise ValueError('{} is not callable'.format(value))
         self.fetcher_func = value.__name__
 
+    def __str__(self):
+        return 'Request<{}, priority={}>'.format(self.url, self.priority)
+
 
 class Response:
     def __init__(self, raw, request=None, status=None, headers=None):
@@ -88,3 +91,6 @@ class Response:
     @property
     def raw(self):
         return self._raw
+
+    def __str__(self):
+        return 'Response<{}>'.format(self.url)

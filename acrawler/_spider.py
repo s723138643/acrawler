@@ -49,7 +49,7 @@ class BaseSpider:
             fetcher = getattr(self, request.fetcher)
         response = await fetcher(request)
         if isinstance(response, Request):
-            await self.send_result(response)
+            self.send_result(response)
             return None
         if isinstance(response, Response) and (not response.request):
             # to make sure raw request in result
@@ -67,11 +67,11 @@ class BaseSpider:
         if isinstance(response, Response):
             result = do_parse(response)
             if result:
-                await self.send_result(result)
+                self.send_result(result)
         elif isinstance(response, Request):
-            await self.send_result(response)
+            self.send_result(response)
         else:
-            raise TypeError('excepted {} object'.format(type(response)))
+            raise TypeError('unexcepted {} object'.format(type(response)))
 
     async def run(self):
         # initialize spider
@@ -94,14 +94,14 @@ class BaseSpider:
             except asyncio.CancelledError:
                 self.log.warn('force stoped')
                 task.filter_ignore = True
-                await self.send_result(task)
+                self.send_result(task)
                 break
             except Exception as e:
                 task.filter_ignore = True
-                await self.send_result(task)
+                self.send_result(task)
                 self.log.error('task <{}> failed'.format(task.url))
-                self.log.exception(e)
                 if self._debug:
+                    self.log.exception(e)
                     self.stop_all()
                 continue
             finally:
@@ -109,27 +109,30 @@ class BaseSpider:
                 self._engine.task_done(self)
         self.close()
 
-    async def send_result(self, results):
+    def send_result(self, results):
         # send result to engine
-        def request_filter(before):
-            for result in before:
-                if result and isinstance(result, Request):
-                    yield result
-                else:
-                    self.log.warn('excepted a Request object')
+        if type(results) in (str, bytes):
+            self.log.warn('excepted a Request object')
+            return
+
+        def is_request(result):
+            if isinstance(result, Request):
+                return True
+            self.log.warn('excepted a Request object')
+            return False
 
         if not hasattr(results, '__iter__'):
             results = (results, )
-        filted = request_filter(results)
-        await self._engine.send_result(filted)
+        filted = filter(is_request, results)
+        self._engine.send_result(filted)
 
-    async def send(self, task):
+    def send(self, task):
         '''send task to spider, used by engine
         '''
-        await self._tasks.put(task)
+        self._tasks.put_nowait(task)
 
-    async def broadcast(self, msg):
-        await self._engine.broadcast(msg)
+    def broadcast(self, msg):
+        self._engine.broadcast(msg)
 
     def stop_all(self):
         '''stop all spiders, may not stop immediately'''

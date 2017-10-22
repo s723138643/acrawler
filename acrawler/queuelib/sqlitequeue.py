@@ -2,10 +2,10 @@ import re
 import sqlite3
 import asyncio
 import logging
-
+from collections import defaultdict
 from pathlib import Path
 
-from .base import Empty, Full, BaseQueue, serialze, unserialze
+from .base import QueueEmpty, BaseQueue, serialze, unserialze
 
 
 logger = logging.getLogger(name='Scheduler.Queue')
@@ -28,12 +28,54 @@ _sql_pop = 'SELECT id,serialzed FROM queue ORDER BY id LIMIT ?'
 _sql_del = 'DELETE FROM queue WHERE id = ?'
 
 
-class FifoSQLiteQueue(BaseQueue):
+class SQLite:
+    def _execute(self, db, query, data=None):
+        cursor = db.cursor()
+        try:
+            if data:
+                cursor.execute(query, data)
+            else:
+                cursor.execute(query)
+        finally:
+            cursor.close()
 
-    def __init__(self, settings, maxsize=0, loop=None):
-        super().__init__(loop=loop)
+    def _execute_many(self, db, query, data=None):
+        cursor = db.cursor()
+        try:
+            cursor.executemany(query, data)
+            return cursor.rowcount
+        finally:
+            cursor.close()
+
+    def _fetch_one(self, db, query, data=None):
+        cursor = db.cursor()
+        try:
+            if data:
+                cursor.execute(query, data)
+            else:
+                cursor.execute(query)
+            return cursor.fetchone()[0]
+        finally:
+            cursor.close()
+
+    def _fetch_all(self, db, query, data=None):
+        cursor = db.cursor()
+        try:
+            if data:
+                cursor.execute(query, data)
+            else:
+                cursor.execute(query)
+            for record in cursor:
+                yield record
+        finally:
+            cursor.close()
+
+
+class FifoSQLiteQueue(SQLite, BaseQueue):
+
+    def __init__(self, settings, loop=None):
+        BaseQueue.__init__(self, loop=loop)
         self._closed = False
-        self._maxsize = maxsize if maxsize else 0
         self._loop = loop if loop else asyncio.get_event_loop()
         self._settings = settings
         self._path = settings.get('sqlite_path', './')
@@ -45,48 +87,37 @@ class FifoSQLiteQueue(BaseQueue):
         self._create_table()
 
     def _create_table(self):
-        cursor = self._db.cursor()
-        try:
-            cursor.execute(_sql_create)
-        finally:
-            cursor.close()
+        self._execute(self._db, _sql_create)
 
-    def _put(self, request):
-        try:
-            serialzed = serialze(request)
-        except Exception as e:
-            logger.error('Serialze Error, {}'.format(e))
-            return
-        cursor = self._db.cursor()
-        try:
-            cursor.execute(_sql_push, (request.url, request.priority,
-                                       request.created, request.last_activated,
-                                       request.retryed, serialzed))
-        finally:
-            cursor.close()
+    def _put(self, items):
+        records = []
+        for item in items:
+            try:
+                serialzed = serialze(item)
+            except Exception as e:
+                logger.error('Serialze Error, {}'.format(e))
+                continue
+            record = (
+                item.url, item.priority, item.created,
+                item.last_activated, item.retryed, serialzed
+                )
+            records.append(record)
+        return self._execute_many(self._db, _sql_push, records)
 
     def _get(self, count=1):
-        items = []
-        cursor = self._db.cursor()
-        try:
-            rows = cursor.execute(_sql_pop, (count,)).fetchall()
-            if not rows:
-                raise Empty()
-            for row in rows:
-                try:
-                    unserialzed = unserialze(row['serialzed'])
-                    cursor.execute(_sql_del, (row['id'],))
-                except Exception as e:
-                    logger.error(e)
-                    continue
-                items.append(unserialzed)
-        finally:
-            cursor.close()
+        items, deletes = [], []
+        for row in self._fetch_all(self._db, _sql_pop, (count,)):
+            try:
+                unserialzed = unserialze(row['serialzed'])
+            except Exception as e:
+                logger.error(e)
+                continue
+            items.append(unserialzed)
+            deletes.append((row['id'], ))
+        self._execute_many(self._db, _sql_del, deletes)
+        if not items:
+            raise QueueEmpty()
         return items
-
-    @property
-    def maxsize(self):
-        return self._maxsize
 
     @staticmethod
     def clean(settings):
@@ -98,7 +129,7 @@ class FifoSQLiteQueue(BaseQueue):
     def close(self):
         if not self._closed:
             self._closed = True
-            if self.__len__() > 0:
+            if self.qsize() > 0:
                 self._db.commit()
                 self._db.close()
             else:
@@ -109,15 +140,7 @@ class FifoSQLiteQueue(BaseQueue):
         return self._closed
 
     def qsize(self):
-        return self.__len__()
-
-    def __len__(self):
-        cursor = self._db.cursor()
-        try:
-            x = cursor.execute(_sql_size)
-            return x.fetchone()[0]
-        finally:
-            cursor.close()
+        return self._fetch_one(self._db, _sql_size)
 
     def __del__(self):
         if not self._closed:
@@ -127,50 +150,52 @@ class FifoSQLiteQueue(BaseQueue):
 class PrioritySQLiteQueue(BaseQueue):
 
     def __init__(self, settings, loop=None):
-        super(PrioritySQLiteQueue, self).__init__(loop=loop)
+        BaseQueue.__init__(loop=loop)
         self._closed = False
         self._loop = loop if loop else asyncio.get_event_loop()
         self._queues = {}
         self._path = settings.get('sqlite_path', './')
         self._basename = settings.get('sqlite_dbname', 'task_priority')
-        self._maxsize = settings.get('maxsize', 0)
-
         self._pass_or_resume()
 
-    def _pass_or_resume(self):
-        task_dir = Path(self._path)
-        if not task_dir.is_dir():
-            task_dir.mkdir()
-            return
-
-        for child in task_dir.iterdir():
+    def _got_db(self, path: Path):
+        for child in path.iterdir():
             if child.is_file():
                 m = re.search(self._basename+'_(?P<p>\d+)\.db', str(child))
                 if not m:
                     continue
                 priority = int(m.group('p'))
                 tmp = {
-                    'sqlite_path': self._path,
+                    'sqlite_path': str(path),
                     'sqlite_dbname': child.name
                 }
-                queue = FifoSQLiteQueue(tmp, loop=self._loop)
-                self._queues[priority] = queue
+                yield priority, FifoSQLiteQueue(tmp, loop=self._loop)
+
+    def _pass_or_resume(self):
+        task_dir = Path(self._path)
+        if not task_dir.is_dir():
+            task_dir.mkdir()
+            return
+        for priority, db in self._got_db(task_dir):
+            self._queues[priority] = db
 
     def _create_queue(self, priority, loop=None):
         name = '{}_{}.db'.format(self._basename, priority)
         tmp = {'sqlite_path': self._path, 'sqlite_dbname': name}
         queue = FifoSQLiteQueue(tmp, loop=loop)
         self._queues[priority] = queue
-
         return queue
 
-    def _put(self, item):
-        priority = item.priority
-        if priority not in self._queues:
-            queue = self._create_queue(priority, loop=self._loop)
-        else:
-            queue = self._queues.get(priority)
-        queue.put_nowait(item)
+    def _put(self, items):
+        maps = defaultdict([])
+        for item in items:
+            maps[item.priority].append(item)
+        for priority, requests in maps.items():
+            if priority not in self._queues:
+                queue = self._create_queue(priority, loop=self._loop)
+            else:
+                queue = self._queues.get(priority)
+            queue.put_nowait(requests)
 
     def _get(self, count=1):
         results = []
@@ -178,7 +203,7 @@ class PrioritySQLiteQueue(BaseQueue):
         for priority, queue in sorted(self._queues.items()):
             try:
                 items = queue.get_nowait(remain)
-            except Empty:
+            except QueueEmpty:
                 queue.close()
                 del self._queues[priority]
                 continue
@@ -187,16 +212,12 @@ class PrioritySQLiteQueue(BaseQueue):
             if remain <= 0:
                 return results
         if not results:
-            raise Empty()
+            raise QueueEmpty()
         return results
 
-    @property
-    def _size(self):
+    def qsize(self):
         sizes = [i.qsize() for i in self._queues.values()]
         return sum(sizes)
-
-    def qsize(self):
-        return self._size
 
     @staticmethod
     def clean(settings):

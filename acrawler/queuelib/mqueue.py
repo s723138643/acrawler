@@ -1,4 +1,4 @@
-from collections import deque
+from collections import deque, defaultdict
 
 from .base import BaseQueue
 
@@ -11,23 +11,31 @@ class PriorityQueue(BaseQueue):
         self._prioritys = dict()
         self._total = 0
 
-    def _put(self, item):
-        priority = item.priority
-        if priority in self._prioritys:
-            queue = self._prioritys[priority]
-        else:
-            queue = deque()
-            self._prioritys[priority] = queue
-        queue.append(item)
-        self._total += 1
+    def _put(self, items):
+        for item in items:
+            priority = item.priority
+            if priority in self._prioritys:
+                queue = self._prioritys[priority]
+            else:
+                queue = deque()
+                self._prioritys[priority] = queue
+            queue.append(item)
+            self._total += 1
 
     def _get(self, count=1):
+        remains = count
+        items = []
         for priority in sorted(self._prioritys.keys()):
+            if remains <= 0:
+                break
             queue = self._prioritys[priority]
-            if queue:
+            while queue and remains > 0:
+                items.append(queue.popleft())
                 self._total -= 1
-                return [queue.popleft()]
-        raise Empty
+                remains -= 1
+        if not items:
+            raise QueueEmpty()
+        return items
 
     def close(self):
         self._total = 0
