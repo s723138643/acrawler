@@ -39,13 +39,10 @@ class Engine:
         self._SchedulerClass = SchedulerClass
         self._QueueClass = QueueClass
         self._FilterClass = FilterClass
-
         self._scheduler = None
-
         self._waiters = asyncio.Queue()
         self._spiders = []
         self._tasks = []
-
         self._threads = self._settings['engine'].get('threads', '1')
         self._engine_coro = None
         self._stop_coro = None
@@ -53,7 +50,6 @@ class Engine:
         self._resume = resume
         self._interrupt = 0
         self._unfinished = 0
-
         self._initial()
 
     def _initial(self):
@@ -74,7 +70,7 @@ class Engine:
                 self._loop
         )
 
-    def signalhandler(self, signame):
+    def _signalhandler(self, signame):
         logger.warning('got signal {}'.format(signame))
         self._interrupt += 1
         self.stop()
@@ -86,7 +82,7 @@ class Engine:
         for worker in self._spiders:
             worker.send(msg)
 
-    def need_boost(self):
+    def _need_boost(self):
         f = pathlib.Path(self._first_start_file)
         if f.is_file():
             return False
@@ -95,16 +91,16 @@ class Engine:
 
     def run(self):
         loop = self._loop
-        if self.need_boost():
+        if self._need_boost():
             requests = self._SpiderClass.start_request()
-            loop.run_until_complete(self.send_result(requests))
-        self._stop_coro = loop.create_task(self.wait_stop())
+            self.send_result(requests)
+        self._stop_coro = loop.create_task(self._wait_stop())
         self._tasks.append(self._stop_coro)
-        self._engine_coro = loop.create_task(self.engine())
-        self._tasks.append(self._engine_coro)
+        self._allot_coro = loop.create_task(self._allot())
+        self._tasks.append(self._allot_coro)
         for i in range(self._threads):
             spider = self._SpiderClass(
-                self, self._settings['spider'], loop
+                self, self._settings['spider'], loop=loop
                 )
             self._spiders.append(spider)
             self.register(spider)
@@ -112,7 +108,7 @@ class Engine:
         # add signal handler
         loop.add_signal_handler(
             getattr(signal, 'SIGINT'),
-            functools.partial(self.signalhandler, 'SIGINT')
+            functools.partial(self._signalhandler, 'SIGINT')
         )
         try:
             loop.run_until_complete(asyncio.wait(self._tasks))
@@ -128,7 +124,8 @@ class Engine:
         assert hasattr(results, '__iter__')
         self._scheduler.add(results)
 
-    async def engine(self):
+    async def _allot(self):
+        # allot task to spider which is idled
         while True:
             waiter = await self._waiters.get()
             try:
@@ -147,17 +144,16 @@ class Engine:
         self.register(spider)
         self._unfinished -= 1
 
-    async def wait_stop(self):
+    async def _wait_stop(self):
         await self._quit_event.wait()
-        await self.broadcast(Stop())
-        if self._engine_coro and not self._engine_coro.done():
-            self._engine_coro.cancel()
+        self.broadcast(Stop())
+        if self._allot_coro and not self._allot_coro.done():
+            self._allot_coro.cancel()
 
     def cancel_all(self):
         for task in self._tasks:
-            if task.done():
-                continue
-            task.cancel()
+            if not task.done():
+                task.cancel()
 
     def stop(self):
         if self._interrupt <= 1:

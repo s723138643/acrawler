@@ -29,42 +29,41 @@ _sql_del = 'DELETE FROM queue WHERE id = ?'
 
 
 class SQLite:
+    def ensure_tuple(self, data):
+        if data is None:
+            return tuple()
+        assert isinstance(data, tuple)
+        return data
+
     def _execute(self, db, query, data=None):
+        data = self.ensure_tuple(data)
         cursor = db.cursor()
         try:
-            if data:
-                cursor.execute(query, data)
-            else:
-                cursor.execute(query)
+            cursor.execute(query, data)
         finally:
             cursor.close()
 
-    def _execute_many(self, db, query, data=None):
+    def _execute_many(self, db, query, data):
         cursor = db.cursor()
         try:
             cursor.executemany(query, data)
-            return cursor.rowcount
         finally:
             cursor.close()
 
     def _fetch_one(self, db, query, data=None):
+        data = self.ensure_tuple(data)
         cursor = db.cursor()
         try:
-            if data:
-                cursor.execute(query, data)
-            else:
-                cursor.execute(query)
+            cursor.execute(query, data)
             return cursor.fetchone()[0]
         finally:
             cursor.close()
 
     def _fetch_all(self, db, query, data=None):
+        data = self.ensure_tuple(data)
         cursor = db.cursor()
         try:
-            if data:
-                cursor.execute(query, data)
-            else:
-                cursor.execute(query)
+            cursor.execute(query, data)
             for record in cursor:
                 yield record
         finally:
@@ -102,7 +101,8 @@ class FifoSQLiteQueue(SQLite, BaseQueue):
                 item.last_activated, item.retryed, serialzed
                 )
             records.append(record)
-        return self._execute_many(self._db, _sql_push, records)
+        self._execute_many(self._db, _sql_push, records)
+        return len(records) > 0
 
     def _get(self, count=1):
         items, deletes = [], []
@@ -150,15 +150,15 @@ class FifoSQLiteQueue(SQLite, BaseQueue):
 class PrioritySQLiteQueue(BaseQueue):
 
     def __init__(self, settings, loop=None):
-        BaseQueue.__init__(loop=loop)
+        BaseQueue.__init__(self, loop=loop)
         self._closed = False
         self._loop = loop if loop else asyncio.get_event_loop()
         self._queues = {}
         self._path = settings.get('sqlite_path', './')
         self._basename = settings.get('sqlite_dbname', 'task_priority')
-        self._pass_or_resume()
+        self._resume()
 
-    def _got_db(self, path: Path):
+    def _get_db(self, path: Path):
         for child in path.iterdir():
             if child.is_file():
                 m = re.search(self._basename+'_(?P<p>\d+)\.db', str(child))
@@ -171,12 +171,12 @@ class PrioritySQLiteQueue(BaseQueue):
                 }
                 yield priority, FifoSQLiteQueue(tmp, loop=self._loop)
 
-    def _pass_or_resume(self):
+    def _resume(self):
         task_dir = Path(self._path)
         if not task_dir.is_dir():
             task_dir.mkdir()
             return
-        for priority, db in self._got_db(task_dir):
+        for priority, db in self._get_db(task_dir):
             self._queues[priority] = db
 
     def _create_queue(self, priority, loop=None):
@@ -187,17 +187,19 @@ class PrioritySQLiteQueue(BaseQueue):
         return queue
 
     def _put(self, items):
-        maps = defaultdict([])
+        maps = defaultdict(list)
         for item in items:
             maps[item.priority].append(item)
+        putted = False
         for priority, requests in maps.items():
             if priority not in self._queues:
                 queue = self._create_queue(priority, loop=self._loop)
             else:
                 queue = self._queues.get(priority)
-            queue.put_nowait(requests)
+            putted = putted or queue.put(requests)
+        return putted
 
-    def _get(self, count=1):
+    def _get(self, count):
         results = []
         remain = count
         for priority, queue in sorted(self._queues.items()):
@@ -216,8 +218,10 @@ class PrioritySQLiteQueue(BaseQueue):
         return results
 
     def qsize(self):
-        sizes = [i.qsize() for i in self._queues.values()]
-        return sum(sizes)
+        total_size = 0
+        for db in self._queues.values():
+            total_size += db.qsize()
+        return total_size
 
     @staticmethod
     def clean(settings):

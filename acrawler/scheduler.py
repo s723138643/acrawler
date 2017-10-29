@@ -2,7 +2,7 @@ import logging
 import asyncio
 
 from collections import deque
-from queuelib.base import QueueEmpty
+from .queuelib.base import QueueEmpty
 
 
 logger = logging.getLogger('Scheduler')
@@ -13,7 +13,7 @@ class Scheduler:
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._urlfilter = FilterClass(settings['filter'])
         self.fetchdiskq = QueueClass(settings['queue'], loop=loop)
-        self._dozen = 10
+        self._cache_size = 10
         self._settings = settings
         self._caches = deque()  # use memory cache to reduce disk IO
 
@@ -32,7 +32,7 @@ class Scheduler:
 
     def next_nowait(self):
         if not self._caches:
-            tasks = self.fetchdiskq.get_nowait(self._dozen)
+            tasks = self.fetchdiskq.get_nowait(self._cache_size)
             self._caches.extend(tasks)
         return self._caches.popleft()
 
@@ -40,7 +40,7 @@ class Scheduler:
         if timeout:
             assert timeout > 0
         if not self._caches:
-            tasks = await self._get(self._dozen, timeout=timeout)
+            tasks = await self._get(self._cache_size, timeout=timeout)
             self._caches.extend(tasks)
         return self._caches.popleft()
 

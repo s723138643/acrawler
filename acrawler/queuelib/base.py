@@ -10,13 +10,17 @@ class BaseQueue:
         self._loop = asyncio.get_event_loop() if not loop else loop
         self._getters = deque()
 
-    def _get(self, count=1):
+    def _get(self, count):
+        # param count: get count items at once
         raise NotImplementedError
 
-    def _put(self, items):
+    def _put(self, items) -> bool:
+        # param items: items must can be itered
+        # return: return True if putted item
         raise NotImplementedError
 
     async def get(self, count=1):
+        assert count > 0
         while self.empty():
             getter = self._loop.create_future()
             self._getters.append(getter)
@@ -30,15 +34,21 @@ class BaseQueue:
         return self.get_nowait(count=count)
 
     def get_nowait(self, count=1):
+        assert count > 0
         if self.empty():
             raise QueueEmpty()
         return self._get(count=count)
 
-    def put(self, items):
+    def put_nowait(self, items):
         if not hasattr(items, '__iter__'):
             items = (items, )
-        if self._put(items) > 0:
+        if self._put(items):    # wake up getter, if we had putted item
             self._wakeup_next(self._getters)
+
+    # disktop queue do not has maxsize property
+    # so put method is not coroutine
+    def put(self, items):
+        self.put_nowait(items)
 
     def _wakeup_next(self, waiters):
         while waiters:
@@ -50,7 +60,8 @@ class BaseQueue:
     def empty(self):
         return self.qsize() <= 0
 
-    def qsize(self):
+    def qsize(self) -> int:
+        # return: count of items in this queue
         raise NotImplementedError
 
     def close(self):
@@ -58,6 +69,7 @@ class BaseQueue:
 
     @staticmethod
     def clean(settings):
+        # remove all databases to clean up queue
         raise NotImplementedError
 
 
