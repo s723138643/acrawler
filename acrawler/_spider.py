@@ -83,6 +83,14 @@ class BaseSpider:
         while True:
             task = await self._tasks.get()
             if isinstance(task, Stop):
+                remains = []
+                # put back remain tasks
+                while not self._tasks.empty():
+                    task = self._tasks.get_nowait()
+                    task.filter_ignore = True
+                    remains.append(task)
+                if remains:
+                    self.send_result(remains)
                 self.log.info('recieved stop message, stop now')
                 break
             try:
@@ -110,7 +118,9 @@ class BaseSpider:
         self.close()
 
     def send_result(self, results):
-        # send result to engine
+        ''' send result to engine accept a Request object or a iterable
+        object that contains Request object
+        '''
         if type(results) in (str, bytes):
             self.log.warn('excepted a Request object')
             return
@@ -133,10 +143,6 @@ class BaseSpider:
 
     def broadcast(self, msg):
         self._engine.broadcast(msg)
-
-    def stop_all(self):
-        '''stop all spiders, may not stop immediately'''
-        self._engine.stop()
 
     def close(self):
         pass
