@@ -1,7 +1,7 @@
 import aiohttp
 from .model import Response
 from ._spider import BaseSpider
-from ._spider import logger
+# from ._spider import logger
 
 
 class Spider(BaseSpider):
@@ -20,7 +20,7 @@ class Spider(BaseSpider):
     def close(self):
         self._closed = True
         if self._session:
-            self._session.close()
+            self._loop.create_task(self._session.close())
 
     def __del__(self):
         if not self._closed:

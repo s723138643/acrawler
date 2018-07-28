@@ -1,7 +1,7 @@
 import logging
 import pathlib
 
-import pybloom
+from pybloom_live import ScalableBloomFilter
 
 from .basefilter import BaseFilter
 
@@ -17,11 +17,13 @@ class BlumeFilter(BaseFilter):
         if not self._path.exists():
             self._path.mkdir()
         blumefile = settings.get('blumedb')
-        self._blumedb = str(self._path / blumefile)
+        self._blumedb = self._path / blumefile
         if self._blumedb.is_file():
-            self._blumefilter = pybloom.from_file(self._blumedb)
+            with self._blumedb.open('rb') as fp:
+                self._blumefilter = ScalableBloomFilter.fromfile(fp)
         else:
-            self._blumefilter = pybloom.Filter(1024*1024*10, 0.0001, self._blumedb)
+            growth = ScalableBloomFilter.SMALL_SET_GROWTH
+            self._blumefilter = ScalableBloomFilter(10240, 0.001, growth)
 
     def url_seen(self, url):
         unique_url = self.url_normalization(url)
@@ -41,7 +43,8 @@ class BlumeFilter(BaseFilter):
     def close(self):
         self._blumeclosed = True
         super().close()
-        self._blumefilter.close()
+        with self._blumedb.open('wb') as fp:
+            self._blumefilter.tofile(fp)
 
     def __del__(self):
         if not self._blumeclosed:
